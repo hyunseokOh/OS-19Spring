@@ -24,7 +24,7 @@ SYSCALL_DEFINE2(ptree, struct prinfo*, buf, int*, nr) {
 
   /* EINVAL check */
   if (buf == NULL || nr == NULL) {
-    return -EINVAL
+    return -EINVAL;
   }
 
   /* read nr data from user space */
