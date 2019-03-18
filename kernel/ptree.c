@@ -39,9 +39,6 @@ int save_prinfo(struct task_struct* task, struct prinfo* buf, int i,
   struct task_struct* first_child;
   struct task_struct* next_sibling;
 
-  first_child = list_entry(&(task->children), struct task_struct, children);
-  next_sibling = list_entry(&(task->sibling), struct task_struct, sibling);
-
   buf[i].state = task->state;
   buf[i].pid = task->pid;
   buf[i].parent_pid = task->real_parent->pid;
@@ -51,8 +48,26 @@ int save_prinfo(struct task_struct* task, struct prinfo* buf, int i,
    *
    * I think we must handle for each case
    */
-  buf[i].first_child_pid = first_child->pid;
-  buf[i].next_sibling_pid = next_sibling->pid;
+  if (list_empty(&(task->children))){
+    /* leaf */
+    buf[i].first_child_pid = 0;
+  } else {
+    /*
+     * we need to pass member as sibling?
+     * https://www.pearsonhighered.com/assets/samplechapter/0/6/7/2/0672327201.pdf
+     * https://stackoverflow.com/questions/33092164/how-to-obtain-youngest-childs-pid-from-task-struct
+     */
+    first_child = list_first_entry(&(task->children), struct task_struct, sibling);
+    buf[i].first_child_pid = first_child->pid;
+  }
+
+  if (list_is_last(&(task->sibling), &(task->real_parent->children))){
+    /* tail */
+    buf[i].next_sibling_pid = 0;
+  } else{
+    next_sibling = list_first_entry(&(task->sibling), struct task_struct, sibling);
+    buf[i].next_sibling_pid = next_sibling->pid;
+  }
   buf[i].uid = (uint64_t)task->real_cred->uid.val;
   strncpy(buf[i].comm, task->comm, TASK_COMM_LEN);
 
@@ -67,6 +82,11 @@ void ptreeTraverse(struct prinfo* buf, int nrValue, int* cnt) {
    *  For example, systemd-journal comes much later than systemd
    *  I think we should use list_for_each_entry?
    */
+  task = &init_task;
+  do {
+
+
+  } while (task != &init_task);
   for_each_process(task) {
     if (*cnt >= nrValue) {
       return;
