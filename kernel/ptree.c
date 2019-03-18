@@ -11,17 +11,17 @@
  *
  */
 
-#include <linux/list.h>       /* linked likst usage */
-#include <linux/prinfo.h>     /* prinfo struct */
-#include <linux/sched.h>      /* task struct */
-#include <linux/sched/task.h> /* task_list lock */
-#include <linux/slab.h>       /* kmalloc, kfree */
-#include <linux/syscalls.h>   /* SYSCALL_DEFINE */
-#include <linux/uaccess.h>    /* user-space access */
+#include <linux/list.h>         /* linked likst usage */
+#include <linux/prinfo.h>       /* prinfo struct */
+#include <linux/sched.h>        /* task struct */
+#include <linux/sched/signal.h> /* for_each_process(p) macro */
+#include <linux/sched/task.h>   /* task_list lock */
+#include <linux/slab.h>         /* kmalloc, kfree */
+#include <linux/string.h>       /* strncpy */
+#include <linux/syscalls.h>     /* SYSCALL_DEFINE */
+#include <linux/uaccess.h>      /* user-space access */
 
 #include <uapi/asm-generic/errno-base.h> /* Error codes */
-
-#include <linux/sched/signal.h> /* for_each_process(p) macro */
 
 /*
  * save_prinfo: stores the information of a given task(process) into prinfo
@@ -30,32 +30,50 @@
  * struct task_struct* task: process(in task_struct) whose information is to be
  * saved
  * struct prinfo* buf: buffer for the process data
- * int index: index for the buffer designating save location
+ * int i: index for the buffer designating save location
  * returns 0 if success, else returns error code
+ * TODO (taebum): maybe void return is enough?
  */
-int save_prinfo(struct task_struct* task, struct prinfo* buf, int index) {
-  int i;
+int save_prinfo(struct task_struct* task, struct prinfo* buf, int i,
+                int nrValue) {
+  struct task_struct* first_child;
+  struct task_struct* next_sibling;
 
-  buf[index].state = task->state;
-  buf[index].pid = task->pid;
-  buf[index].parent_pid = task->real_parent->pid;
-  buf[index].first_child_pid =
-      list_entry(&(task->children), struct task_struct, children)->pid;
-  buf[index].next_sibling_pid =
-      list_entry(&(task->sibling), struct task_struct, sibling)->pid;
-  buf[index].uid = (uint64_t)task->real_cred->uid
-                       .val;  // uid.val is uid32_t, so we need to type cast it
+  first_child = list_entry(&(task->children), struct task_struct, children);
+  next_sibling = list_entry(&(task->sibling), struct task_struct, sibling);
 
-  /* TODO: Replace naive for loop with a string copy mechanism provided within
-   * the kernel source code */
-  for (i = 0; i < TASK_COMM_LEN; i++) {
-    buf[index].comm[i] = task->comm[i];
-    if (task->comm[i] == '\n') {
-      break;
-    }
-  }
+  buf[i].state = task->state;
+  buf[i].pid = task->pid;
+  buf[i].parent_pid = task->real_parent->pid;
+  /* TODO (taebum)
+   * For child and sibling, how can we check whether no child (leaf)
+   *  or no more sibling (tail of task_struct list)
+   *
+   * I think we must handle for each case
+   */
+  buf[i].first_child_pid = first_child->pid;
+  buf[i].next_sibling_pid = next_sibling->pid;
+  buf[i].uid = (uint64_t)task->real_cred->uid.val;
+  strncpy(buf[i].comm, task->comm, TASK_COMM_LEN);
 
   return 0;
+}
+
+void ptreeTraverse(struct prinfo* buf, int nrValue, int* cnt) {
+  struct task_struct* task;
+  /*
+   * TODO (taebum) 
+   * Current traverse just traverse without a hierachy
+   *  For example, systemd-journal comes much later than systemd
+   *  I think we should use list_for_each_entry?
+   */
+  for_each_process(task) {
+    if (*cnt >= nrValue) {
+      return;
+    }
+    save_prinfo(task, buf, *cnt, nrValue);
+    *cnt = *cnt + 1;
+  }
 }
 
 SYSCALL_DEFINE2(ptree, struct prinfo*, buf, int*, nr) {
@@ -68,7 +86,6 @@ SYSCALL_DEFINE2(ptree, struct prinfo*, buf, int*, nr) {
   int nrValue; /* nr length */
   int cnt = 0;
   struct prinfo* kernelBuf = NULL;
-  struct task_struct* p;
 
   /* EINVAL check */
   if (buf == NULL || nr == NULL) {
@@ -98,14 +115,7 @@ SYSCALL_DEFINE2(ptree, struct prinfo*, buf, int*, nr) {
   read_lock(&tasklist_lock);
 
   /* actual traversal goes here */
-  for_each_process(p) {
-    if (cnt < nrValue) {
-      save_prinfo(p, kernelBuf, cnt);
-      ++cnt;
-    } else {
-      break;
-    }
-  }
+  ptreeTraverse(kernelBuf, nrValue, &cnt);
 
   /* unlock */
   read_unlock(&tasklist_lock);
@@ -124,5 +134,5 @@ SYSCALL_DEFINE2(ptree, struct prinfo*, buf, int*, nr) {
 
   kfree(kernelBuf);
 
-  return 0;
+  return (long)cnt;
 }
