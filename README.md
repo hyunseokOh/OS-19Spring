@@ -1,5 +1,5 @@
 # OS - team8
-(GONGLE Logo)
+![final2](https://user-images.githubusercontent.com/25524539/54600895-1f6d3c80-4a81-11e9-902b-54705c5ae1b6.png)
 - Taebum Kim
 - Hyunseok Oh
 - Seong-hoon Seo
