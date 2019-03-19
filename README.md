@@ -1,12 +1,53 @@
-# os-team8
-OS Spring Team8
+# OS - team8
+(GONGLE Logo)
+- Taebum Kim
+- Hyunseok Oh
+- Seong-hoon Seo
 
-# Project1 
+---
 
-## Build Kernel
+# Project 1 - Implementing a New System Call
+## Table of Contents
+- Edited Files
+- High Level Design & Implementation
+- Investiagation of Process Tree
+- Test Result
+- Lessons Learned
+
+## Edited Files
+- arch/arm64/include/asm/**unistd.h**
+  - Increase the number of total system calls
+- arch/arm64/inlcude/asm/**unistd32.h**
+  - Add a new system call
+- include/linux/**syscalls.h**
+  - Add an assembly linkage for a new system call 
+- kernel/**Makefile**
+  - Add a new rule in Makefile
+- include/linux/**prinfo.h**
+  - Define prinfo struct for each process
+- kernel/**ptree.c**
+  - Implement ptree system call
+  - Search all running processes by DFS algorithm and return the process tree information
+- test/**test_ptree.c**
+  - Implement testing file for ptree system call
 
 ## High Level Design & Implementation
 
+(Schematic of program structure)
+
 ## Investigation of Process Tree
 
+## Test Result
+### Case 1 - nr value 10
+(Photo)
+### Case 2 - nr value 200
+(Photo)
+### Case 3 - nr value 0
+(Photo)
+
 ## Lessons Learned
+- A journey of a thousand miles begins with a single step.
+- Kernel has a quite complex structure more than we have expected.
+- Step 0 of development : Hardware checking
+- It is hard and important to find appropriate macros in the kernel source.
+- 
