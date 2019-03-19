@@ -31,13 +31,15 @@
  * saved
  * struct prinfo* buf: buffer for the process data
  * int i: index for the buffer designating save location
+ * int indent: indentation number for comm
  * returns 0 if success, else returns error code
  * TODO (taebum): maybe void return is enough?
  */
 int save_prinfo(struct task_struct* task, struct prinfo* buf, int i,
-                int nrValue) {
+                int indent) {
   struct task_struct* first_child;
   struct task_struct* next_sibling;
+  int j;
 
   buf[i].state = task->state;
   buf[i].pid = task->pid;
@@ -48,7 +50,7 @@ int save_prinfo(struct task_struct* task, struct prinfo* buf, int i,
    *
    * I think we must handle for each case
    */
-  if (list_empty(&(task->children))){
+  if (list_empty(&(task->children))) {
     /* leaf */
     buf[i].first_child_pid = 0;
   } else {
@@ -57,43 +59,55 @@ int save_prinfo(struct task_struct* task, struct prinfo* buf, int i,
      * https://www.pearsonhighered.com/assets/samplechapter/0/6/7/2/0672327201.pdf
      * https://stackoverflow.com/questions/33092164/how-to-obtain-youngest-childs-pid-from-task-struct
      */
-    first_child = list_first_entry(&(task->children), struct task_struct, sibling);
+    first_child =
+        list_first_entry(&(task->children), struct task_struct, sibling);
     buf[i].first_child_pid = first_child->pid;
   }
 
-  if (list_is_last(&(task->sibling), &(task->real_parent->children))){
+  if (list_is_last(&(task->sibling), &(task->real_parent->children))) {
     /* tail */
     buf[i].next_sibling_pid = 0;
-  } else{
-    next_sibling = list_first_entry(&(task->sibling), struct task_struct, sibling);
+  } else {
+    next_sibling =
+        list_first_entry(&(task->sibling), struct task_struct, sibling);
     buf[i].next_sibling_pid = next_sibling->pid;
   }
   buf[i].uid = (uint64_t)task->real_cred->uid.val;
-  strncpy(buf[i].comm, task->comm, TASK_COMM_LEN);
+  for (j = 0; j < indent; j++) {
+    buf[i].comm[j] = '\t';
+  }
+  strncpy(buf[i].comm + indent, task->comm, TASK_COMM_LEN);
 
   return 0;
 }
 
-void ptreeTraverse(struct prinfo* buf, int nrValue, int* cnt) {
-  struct task_struct* task;
-  /*
-   * TODO (taebum) 
-   * Current traverse just traverse without a hierachy
-   *  For example, systemd-journal comes much later than systemd
-   *  I think we should use list_for_each_entry?
-   */
-  task = &init_task;
-  do {
+void ptreeTraverse_(struct task_struct* task, struct prinfo* buf, int nrValue,
+                    int* cnt, int indent) {
+  /* traverse current task and all childrens */
+  struct list_head* list;
+  struct task_struct* traverse;
 
-
-  } while (task != &init_task);
-  for_each_process(task) {
-    if (*cnt >= nrValue) {
-      return;
-    }
-    save_prinfo(task, buf, *cnt, nrValue);
-    *cnt = *cnt + 1;
+  if (*cnt >= nrValue) {
+    return;
   }
+
+  save_prinfo(task, buf, *cnt, indent);
+  *cnt = *cnt + 1;
+
+  /* child first */
+  list_for_each(list, &(task->children)) {
+    traverse = list_entry(list, struct task_struct, sibling);
+    ptreeTraverse_(traverse, buf, nrValue, cnt, indent + 1);
+  }
+}
+
+void ptreeTraverse(struct prinfo* buf, int nrValue, int* cnt) {
+  /*
+   * Outermost wrapper for actual traversal
+   */
+  struct task_struct* task;
+  task = &init_task;
+  ptreeTraverse_(task, buf, nrValue, cnt, 0);
 }
 
 SYSCALL_DEFINE2(ptree, struct prinfo*, buf, int*, nr) {
