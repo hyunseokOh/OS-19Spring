@@ -1,5 +1,5 @@
 # OS - team8
-![final2](https://user-images.githubusercontent.com/25524539/54600895-1f6d3c80-4a81-11e9-902b-54705c5ae1b6.png)
+![final4](https://user-images.githubusercontent.com/25524539/54601526-90612400-4a82-11e9-999f-caa6d7b723bd.png)
 - Taebum Kim
 - Hyunseok Oh
 - Seong-hoon Seo
