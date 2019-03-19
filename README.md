@@ -8,11 +8,11 @@
 
 # Project 1 - Implementing a New System Call
 ## Table of Contents
-- Edited Files
-- High Level Design & Implementation
-- Investiagation of Process Tree
-- Test Result
-- Lessons Learned
+- [Edited Files](#edited-files)
+- [High Level Design and Implementation](#high-level-design-and-implementation)
+- [Investiagation of Process Tree](#investigation-of-process-tree)
+- [Test Result](#test-result)
+- [Lessons Learned](#lessons-learned)
 
 ## Edited Files
 - arch/arm64/include/asm/**unistd.h**
@@ -31,7 +31,7 @@
 - test/**test_ptree.c**
   - Implement testing file for ptree system call
 
-## High Level Design & Implementation
+## High Level Design and Implementation
 
 (Schematic of program structure)
 
