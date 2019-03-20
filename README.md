@@ -30,6 +30,8 @@
   - Search all running processes by DFS algorithm and return the process tree information
 - test/**test_ptree.c**
   - Implement testing file for ptree system call
+  
+Total Edited LOC: 153 
 
 ## High Level Design and Implementation
 
