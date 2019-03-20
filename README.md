@@ -31,7 +31,7 @@
 - test/**test_ptree.c**
   - Implement testing file for ptree system call
   
-Total Edited LOC: 153 
+**Total Edited LOC: 153**
 
 ## High Level Design and Implementation
 
@@ -40,12 +40,30 @@ Total Edited LOC: 153
 ## Investigation of Process Tree
 
 ## Test Result
-### Case 1 - nr value 10
-(Photo)
+### Case 1 - nr value 30
+![nr 30](https://user-images.githubusercontent.com/25524539/54693633-523f2f80-4b6a-11e9-9c47-7fbc642fac59.png)
+
+- Print process tree with **30** process information
+- Return value **30**
+- Keep nr value at **30**
+
+---
+
 ### Case 2 - nr value 200
-(Photo)
+![nr 200](https://user-images.githubusercontent.com/25524539/54693640-5408f300-4b6a-11e9-9b2b-8762289a9113.png)
+
+- Print process tree with **entire** process information (**118** in test case)
+- Return value **118**
+- Change nr value to **118**
+
+---
+
 ### Case 3 - nr value 0
-(Photo)
+![nr 0](https://user-images.githubusercontent.com/25524539/54693649-566b4d00-4b6a-11e9-9de6-90bd518c4ab3.png)
+
+- Return value **-1**
+- Keep nr value at **0**
+
 
 ## Lessons Learned
 - A journey of a thousand miles begins with a single step.
