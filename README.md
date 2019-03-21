@@ -34,8 +34,7 @@
 **Total Edited LOC: 153**
 
 ## High Level Design and Implementation
-
-(Schematic of program structure)
+![schematic](https://user-images.githubusercontent.com/25524539/54747238-ae10c380-4c11-11e9-836d-63085b9e61bb.png)
 
 
 ## Test Result
@@ -46,7 +45,7 @@
 - Return value **30**
 - Keep nr value at **30**
 
---
+---
 
 ### Case 2 - nr value 200
 ![nr 200](https://user-images.githubusercontent.com/25524539/54693640-5408f300-4b6a-11e9-9b2b-8762289a9113.png)
@@ -55,7 +54,7 @@
 - Return value **118**
 - Change nr value to **118**
 
---
+---
 
 ### Case 3 - nr value 0
 ![nr 0](https://user-images.githubusercontent.com/25524539/54693649-566b4d00-4b6a-11e9-9de6-90bd518c4ab3.png)
