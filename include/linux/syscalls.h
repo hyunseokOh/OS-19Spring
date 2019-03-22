@@ -79,6 +79,7 @@ union bpf_attr;
 #include <linux/unistd.h>
 #include <linux/quota.h>
 #include <linux/key.h>
+#include <linux/prinfo.h>
 #include <trace/syscall.h>
 
 /*
