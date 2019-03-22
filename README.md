@@ -39,25 +39,25 @@
 
 ## Test Result
 ### Case 1 - nr value 30
-![nr30_new](https://user-images.githubusercontent.com/25524539/54746151-cc28f480-4c0e-11e9-8eb0-0a0cd0f63707.png)
+![nr30](https://user-images.githubusercontent.com/25524539/54807420-86c4ff80-4cc0-11e9-93b7-47a256384f37.png)
 
 - Print process tree with **30** process information
-- Return value **30**
+- Return value **126** (The number of total process)
 - Keep nr value at **30**
 
 ---
 
 ### Case 2 - nr value 200
-![nr 200](https://user-images.githubusercontent.com/25524539/54693640-5408f300-4b6a-11e9-9b2b-8762289a9113.png)
+![nr200](https://user-images.githubusercontent.com/25524539/54807416-862c6900-4cc0-11e9-9d94-29ec3c14814a.png)
 
-- Print process tree with **entire** process information (**118** in test case)
-- Return value **118**
-- Change nr value to **118**
+- Print process tree with **entire** process information (**126** in test case)
+- Return value **126**
+- Change nr value to **126**
 
 ---
 
 ### Case 3 - nr value 0
-![nr 0](https://user-images.githubusercontent.com/25524539/54693649-566b4d00-4b6a-11e9-9de6-90bd518c4ab3.png)
+![nr0](https://user-images.githubusercontent.com/25524539/54807419-86c4ff80-4cc0-11e9-9fd2-0a81c09a95ac.png)
 
 - Return value **-1**
 - Keep nr value at **0**
@@ -73,7 +73,7 @@
 - Init daemon
 - Manages all the processes
 
-![nr30_new](https://user-images.githubusercontent.com/25524539/54746151-cc28f480-4c0e-11e9-8eb0-0a0cd0f63707.png)
+![nr30](https://user-images.githubusercontent.com/25524539/54807420-86c4ff80-4cc0-11e9-93b7-47a256384f37.png)
 
 
 ### Kthreadd
@@ -81,7 +81,7 @@
 - All kthreads are forked off this thread
 - kthread_create
 
-![kthreadd](https://user-images.githubusercontent.com/25524539/54746154-ce8b4e80-4c0e-11e9-956a-034650d746f6.png)
+![kthreadd](https://user-images.githubusercontent.com/25524539/54807418-862c6900-4cc0-11e9-85d4-b1f8699653fa.png)
 
 
 ## Lessons Learned
