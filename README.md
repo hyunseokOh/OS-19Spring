@@ -39,7 +39,7 @@
 
 ## Test Result
 ### Case 1 - nr value 30
-![nr30](https://user-images.githubusercontent.com/25524539/54807420-86c4ff80-4cc0-11e9-93b7-47a256384f37.png)
+![nr30_cut](https://user-images.githubusercontent.com/25524539/54807604-1c608f00-4cc1-11e9-9afc-a9c6bb8877ce.png)
 
 - Print process tree with **30** process information
 - Return value **126** (The number of total process)
@@ -57,7 +57,7 @@
 ---
 
 ### Case 3 - nr value 0
-![nr0](https://user-images.githubusercontent.com/25524539/54807419-86c4ff80-4cc0-11e9-9fd2-0a81c09a95ac.png)
+![nr0_cut](https://user-images.githubusercontent.com/25524539/54807603-1bc7f880-4cc1-11e9-87fa-4b4df71b49dd.png)
 
 - Return value **-1**
 - Keep nr value at **0**
@@ -73,7 +73,7 @@
 - Init daemon
 - Manages all the processes
 
-![nr30](https://user-images.githubusercontent.com/25524539/54807420-86c4ff80-4cc0-11e9-93b7-47a256384f37.png)
+![nr30_cut](https://user-images.githubusercontent.com/25524539/54807604-1c608f00-4cc1-11e9-9afc-a9c6bb8877ce.png)
 
 
 ### Kthreadd
