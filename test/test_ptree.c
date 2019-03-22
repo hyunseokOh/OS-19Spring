@@ -1,11 +1,10 @@
 #include <stdint.h> /* int64_t */
 #include <stdio.h>
 #include <stdlib.h>      /* malloc */
+#include <string.h>      /* atoi */
 #include <sys/syscall.h> /* sycall method */
 #include <sys/types.h>   /* declaration of pid_t, etc. */
 #include <unistd.h>
-// #include <linux/prinfo.h> /* prinfo */
-#include <string.h> /* atoi */
 
 struct prinfo {
   int64_t state;          /* current state of process */
@@ -19,6 +18,7 @@ struct prinfo {
 
 int main(int argc, char *argv[]) {
   int nr;
+  int nrBefore;
   struct prinfo *buf = NULL;
 
   if (argc != 2) {
@@ -29,6 +29,7 @@ int main(int argc, char *argv[]) {
   /* TODO: Error Handling for the case argument is not a number */
 
   nr = atoi(argv[1]);
+  nrBefore = nr;
 
   if (nr < 0) {
     printf("nr should be a positive number\n");
@@ -39,10 +40,8 @@ int main(int argc, char *argv[]) {
 
   buf = (struct prinfo *)malloc(sizeof(struct prinfo) * nr);
 
-  long int amma =
+  long int syscallResult =
       syscall(398, buf, &nr);  // TODO: Check whether this syntax is correct
-
-  printf("System call sys_ptree returned %ld\n", amma);
 
   for (int i = 0; i < nr; i++) {
     struct prinfo p = buf[i];
@@ -50,7 +49,8 @@ int main(int argc, char *argv[]) {
            p.first_child_pid, p.next_sibling_pid, p.uid);
   }
 
-  printf("value of nr returned by system call: %d\n", nr);
+  printf("value of nr before: %d, after: %d\n", nrBefore, nr);
+  printf("System call sys_ptree returned %ld\n", syscallResult);
 
   printf("TEST END\n");
 

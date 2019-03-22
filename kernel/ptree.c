@@ -32,11 +32,9 @@
  * struct prinfo* buf: buffer for the process data
  * int i: index for the buffer designating save location
  * int indent: indentation number for comm
- * returns 0 if success, else returns error code
- * TODO (taebum): maybe void return is enough?
  */
-int save_prinfo(struct task_struct* task, struct prinfo* buf, int i,
-                int indent) {
+void save_prinfo(struct task_struct* task, struct prinfo* buf, int i,
+                 int indent) {
   struct task_struct* first_child;
   struct task_struct* next_sibling;
   int j;
@@ -44,21 +42,11 @@ int save_prinfo(struct task_struct* task, struct prinfo* buf, int i,
   buf[i].state = task->state;
   buf[i].pid = task->pid;
   buf[i].parent_pid = task->real_parent->pid;
-  /* TODO (taebum)
-   * For child and sibling, how can we check whether no child (leaf)
-   *  or no more sibling (tail of task_struct list)
-   *
-   * I think we must handle for each case
-   */
+
   if (list_empty(&(task->children))) {
     /* leaf */
     buf[i].first_child_pid = 0;
   } else {
-    /*
-     * we need to pass member as sibling?
-     * https://www.pearsonhighered.com/assets/samplechapter/0/6/7/2/0672327201.pdf
-     * https://stackoverflow.com/questions/33092164/how-to-obtain-youngest-childs-pid-from-task-struct
-     */
     first_child =
         list_first_entry(&(task->children), struct task_struct, sibling);
     buf[i].first_child_pid = first_child->pid;
@@ -73,41 +61,46 @@ int save_prinfo(struct task_struct* task, struct prinfo* buf, int i,
     buf[i].next_sibling_pid = next_sibling->pid;
   }
   buf[i].uid = (uint64_t)task->real_cred->uid.val;
+
+  /* indentation pad */
   for (j = 0; j < indent; j++) {
     buf[i].comm[j] = '\t';
   }
   strncpy(buf[i].comm + indent, task->comm, TASK_COMM_LEN);
 
-  return 0;
+  return;
 }
 
 void ptreeTraverse_(struct task_struct* task, struct prinfo* buf, int nrValue,
-                    int* cnt, int indent) {
+                    int* cnt, int* access, int indent) {
   /* traverse current task and all childrens */
-  struct list_head* list;
   struct task_struct* traverse;
 
-  if (*cnt >= nrValue) {
-    return;
+  /* total access increase */
+  *access = *access + 1;
+
+  if (*cnt < nrValue) {
+    /* copy */
+    save_prinfo(task, buf, *cnt, indent);
+    *cnt = *cnt + 1;
   }
 
-  save_prinfo(task, buf, *cnt, indent);
-  *cnt = *cnt + 1;
-
-  /* child first */
-  list_for_each(list, &(task->children)) {
-    traverse = list_entry(list, struct task_struct, sibling);
-    ptreeTraverse_(traverse, buf, nrValue, cnt, indent + 1);
+  /* traverse */
+  list_for_each_entry(traverse, &(task->children), sibling) {
+    ptreeTraverse_(traverse, buf, nrValue, cnt, access, indent + 1);
   }
 }
 
-void ptreeTraverse(struct prinfo* buf, int nrValue, int* cnt) {
+int ptreeTraverse(struct prinfo* buf, int nrValue, int* cnt) {
   /*
    * Outermost wrapper for actual traversal
    */
   struct task_struct* task;
+  int access = 0;
+
   task = &init_task;
-  ptreeTraverse_(task, buf, nrValue, cnt, 0);
+  ptreeTraverse_(task, buf, nrValue, cnt, &access, 0);
+  return access;
 }
 
 SYSCALL_DEFINE2(ptree, struct prinfo*, buf, int*, nr) {
@@ -119,6 +112,7 @@ SYSCALL_DEFINE2(ptree, struct prinfo*, buf, int*, nr) {
 
   int nrValue; /* nr length */
   int cnt = 0;
+  int access;
   struct prinfo* kernelBuf = NULL;
 
   /* EINVAL check */
@@ -129,7 +123,6 @@ SYSCALL_DEFINE2(ptree, struct prinfo*, buf, int*, nr) {
   /* read nr data from user space */
   if (copy_from_user(&nrValue, nr, sizeof(int))) {
     /* EFAULT occur (cannot access) */
-    printk("We have failed in copying nr to kernel space\n");
     return -EFAULT;
   }
 
@@ -141,7 +134,6 @@ SYSCALL_DEFINE2(ptree, struct prinfo*, buf, int*, nr) {
       (struct prinfo*)kmalloc(sizeof(struct prinfo) * nrValue, GFP_KERNEL);
   if (kernelBuf == NULL) {
     /* allocation failed */
-    printk("We have failed in kmalloc for buf\n");
     return -ENOMEM;
   }
 
@@ -149,24 +141,22 @@ SYSCALL_DEFINE2(ptree, struct prinfo*, buf, int*, nr) {
   read_lock(&tasklist_lock);
 
   /* actual traversal goes here */
-  ptreeTraverse(kernelBuf, nrValue, &cnt);
+  access = ptreeTraverse(kernelBuf, nrValue, &cnt);
 
   /* unlock */
   read_unlock(&tasklist_lock);
 
   if (copy_to_user(buf, kernelBuf, sizeof(struct prinfo) * nrValue)) {
     /* copying kernel to user failed */
-    printk("We have failed in copying buf back to user space\n");
     return -EFAULT;
   }
 
   if (copy_to_user(nr, &cnt, sizeof(int))) {
     /* copying kernel to user failed */
-    printk("We have failed in copying nr back to user space\n");
     return -EFAULT;
   }
 
   kfree(kernelBuf);
 
-  return (long)cnt;
+  return (int64_t)access;
 }
