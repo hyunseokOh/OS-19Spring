@@ -14,7 +14,6 @@
 #include <linux/list.h>         /* linked likst usage */
 #include <linux/prinfo.h>       /* prinfo struct */
 #include <linux/sched.h>        /* task struct */
-#include <linux/sched/signal.h> /* for_each_process(p) macro */
 #include <linux/sched/task.h>   /* task_list lock */
 #include <linux/slab.h>         /* kmalloc, kfree */
 #include <linux/string.h>       /* strncpy */
@@ -24,11 +23,10 @@
 #include <uapi/asm-generic/errno-base.h> /* Error codes */
 
 /*
- * save_prinfo: stores the information of a given task(process) into prinfo
+ * save_prinfo: stores the information of a given task(process) in the prinfo
  * buffer
  *
- * struct task_struct* task: process(in task_struct) whose information is to be
- * saved
+ * struct task_struct* task: process(in the form of task_struct) whose information is to be saved
  * struct prinfo* buf: buffer for the process data
  * int i: index for the buffer designating save location
  * int indent: indentation number for comm
@@ -39,7 +37,7 @@ void save_prinfo(struct task_struct* task, struct prinfo* buf, int i,
   struct task_struct* next_sibling;
   int j;
 
-  buf[i].state = task->state;
+  buf[i].state = (int64_t)task->state;
   buf[i].pid = task->pid;
   buf[i].parent_pid = task->real_parent->pid;
 
@@ -60,7 +58,7 @@ void save_prinfo(struct task_struct* task, struct prinfo* buf, int i,
         list_first_entry(&(task->sibling), struct task_struct, sibling);
     buf[i].next_sibling_pid = next_sibling->pid;
   }
-  buf[i].uid = (uint64_t)task->real_cred->uid.val;
+  buf[i].uid =(int64_t)task->real_cred->uid.val;
 
   /* indentation pad */
   for (j = 0; j < indent; j++) {
@@ -73,7 +71,7 @@ void save_prinfo(struct task_struct* task, struct prinfo* buf, int i,
 
 void ptreeTraverse_(struct task_struct* task, struct prinfo* buf, int nrValue,
                     int* cnt, int* access, int indent) {
-  /* traverse current task and all childrens */
+  /* traverse current task and all children */
   struct task_struct* traverse;
 
   /* total access increase */
@@ -146,7 +144,7 @@ SYSCALL_DEFINE2(ptree, struct prinfo*, buf, int*, nr) {
   /* unlock */
   read_unlock(&tasklist_lock);
 
-  if (copy_to_user(buf, kernelBuf, sizeof(struct prinfo) * nrValue)) {
+  if (copy_to_user(buf, kernelBuf, sizeof(struct prinfo) * cnt)) {
     /* copying kernel to user failed */
     return -EFAULT;
   }
