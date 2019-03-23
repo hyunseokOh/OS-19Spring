@@ -1,14 +1,15 @@
-#include <stdint.h> /* int64_t */
 #include <stdio.h>
+#include <stdint.h> /* int64_t */
 #include <stdlib.h> /* malloc */
 #include <string.h> /* strtol */
 #include <limits.h> /* INT_MAX, INT_MIN */
 #include <errno.h> /* errno */
+#include <inttypes.h> /* PRId64 */
 #include <sys/syscall.h> /* sycall method */
 #include <sys/types.h>   /* declaration of pid_t, etc. */
 #include <unistd.h>
 
-#include <inttypes.h>
+
 
 struct prinfo {
   int64_t state;          /* current state of process */
@@ -52,21 +53,11 @@ int main(int argc, char *argv[]) {
     nrBefore = nr;
   }
 
-//  nr = atoi(argv[1]); // use of atoi is depreciated due to lack of error-handling
-//  nrBefore = nr;
-
-/* commented out on purpose to check error-handling of ptree */
-//  if (nr < 0) {
-//    printf("nr should be a positive number\n");
-//    return 0;
-//  }
-
   printf("Requested nr: %d\n", nr);
 
   buf = (struct prinfo *)malloc(sizeof(struct prinfo) * nr);
 
     int64_t syscallResult = 
-//  long int syscallResult =
       syscall(398, buf, &nr);
 
   for (int i = 0; i < nr; i++) {
