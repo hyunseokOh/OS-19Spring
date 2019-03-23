@@ -31,7 +31,7 @@
 - test/**test_ptree.c**
   - Implement testing file for ptree system call
   
-**Total Edited LOC: 153**
+**Total Edited LOC: 167**
 
 ## High Level Design and Implementation
 ![schematic](https://user-images.githubusercontent.com/25524539/54747238-ae10c380-4c11-11e9-836d-63085b9e61bb.png)
@@ -91,4 +91,3 @@
 - Kernel has quite a complex structure more than we have expected.
 - Step 0 of all development : Check your Hardware!
 - It is difficult yet important to use appropriate macros in the kernel source.
-- 
