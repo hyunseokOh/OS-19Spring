@@ -2,7 +2,7 @@
 ![final5](https://user-images.githubusercontent.com/25524539/54601604-c7cfd080-4a82-11e9-81fd-bd870b4ff151.png)
 - Taebum Kim
 - Hyunseok Oh
-- Seong-hoon Seo
+- Seonghoon Seo
 
 ---
 
@@ -65,28 +65,30 @@
 
 ## Investigation of Process Tree
 ### Swapper
-- The first process created
-- Represent the state of 'not working' (or 'idle')
-- Used for old swap mechanism in some unices
+- First process created by the system
+- Creates systemd (pid 1) and kthreadd (pid 2) process
+- Idle process that runs only when there is no other runnable process
+- Represent the state of 'not working'
 
 ### Systemd
-- Init daemon
-- Manages all the processes
+- System management daemon
+- Manages all user processes
+- replacement of 'init' system (many linux distributions have adopted it)
 
 ![nr30_cut](https://user-images.githubusercontent.com/25524539/54807604-1c608f00-4cc1-11e9-9afc-a9c6bb8877ce.png)
 
 
 ### Kthreadd
 - Kernel thread daemon
-- All kthreads are forked off this thread
-- kthread_create
+- Its creation is independent from systemd
+- All kernel threads are forked off from kthreadd
 
 ![kthreadd](https://user-images.githubusercontent.com/25524539/54807418-862c6900-4cc0-11e9-85d4-b1f8699653fa.png)
 
 
 ## Lessons Learned
 - A journey of a thousand miles begins with a single step.
-- Kernel has a quite complex structure more than we have expected.
-- Step 0 of development : Hardware checking
-- It is hard and important to find appropriate macros in the kernel source.
+- Kernel has quite a complex structure more than we have expected.
+- Step 0 of all development : Check your Hardware!
+- It is difficult yet important to use appropriate macros in the kernel source.
 - 
