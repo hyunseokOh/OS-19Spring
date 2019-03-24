@@ -52,6 +52,10 @@ def main(args):
         print('Cannt exceed # of argument as 6')
         return
 
+    if syscall_name == '':
+        print('Must assign system call name')
+        return
+
     with open(replace(KERNEL_FILE, name=syscall_name), 'x') as f:
         if n_args == 0:
             f.write(replace(KERNEL_TEMPLATE0, name=syscall_name))
@@ -85,7 +89,8 @@ def main(args):
             contents.insert(-2, replace(SYSCALL_TEMPLATE0, name=syscall_name))
         else:
             contents.insert(
-                -2, replace(SYSCALL_TEMPLATE, name=syscall_name, f_args=f_args))
+                -2, replace(
+                    SYSCALL_TEMPLATE, name=syscall_name, f_args=f_args))
 
         f.seek(0)
         f.writelines(contents)
@@ -104,7 +109,8 @@ def main(args):
     with open(UNISTD32_HEADER, 'r+') as f:
         contents = f.readlines()
         contents.insert(
-            -5, replace(UNISTD32_TEMPLATE, name=syscall_name, number=num_syscall))
+            -5,
+            replace(UNISTD32_TEMPLATE, name=syscall_name, number=num_syscall))
         f.seek(0)
         f.writelines(contents)
 
@@ -117,7 +123,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='information of new syscall')
-    parser.add_argument('--name', type=str, help='name of syscall')
+    parser.add_argument('--name', type=str, help='name of syscall', default='')
     parser.add_argument(
         '--args',
         type=str,
