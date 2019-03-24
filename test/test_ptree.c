@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
         break;
     }
     free(buf);
-    return -1;
+    return 0;
   }
 
   for (int i = 0; i < nr; i++) {
