@@ -56,12 +56,27 @@ def main(args):
         if n_args == 0:
             f.write(replace(KERNEL_TEMPLATE0, name=syscall_name))
         else:
+            # for SYSCALL_DEFINE, we need extra handle in argument
+            separated_args = []  # comma separated
+            split = f_args.replace(',', '').split()
+            buf = ''
+            for i in range(len(split)):
+                if split[i] == 'struct':
+                    # defer writing
+                    buf += split[i]
+                else:
+                    if buf != '':
+                        buf += (' ' + split[i])
+                    else:
+                        buf += split[i]
+                    separated_args.append(buf)
+                    buf = ''
             f.write(
                 replace(
                     KERNEL_TEMPLATE,
                     name=syscall_name,
                     n_args=str(n_args),
-                    f_args=f_args))
+                    f_args=', '.join(separated_args)))
 
     with open(SYSCALL_HEADER, 'r+') as f:
         contents = f.readlines()
@@ -89,13 +104,13 @@ def main(args):
     with open(UNISTD32_HEADER, 'r+') as f:
         contents = f.readlines()
         contents.insert(
-            -5, replace(UNISTD32_TEMPLATE, name='hello', number=num_syscall))
+            -5, replace(UNISTD32_TEMPLATE, name=syscall_name, number=num_syscall))
         f.seek(0)
         f.writelines(contents)
 
     with open(MAKEFILE, 'r+') as f:
         contents = f.readlines()
-        contents.insert(13, replace(MAKEFILE_TEMPLATE, name='hello'))
+        contents.insert(13, replace(MAKEFILE_TEMPLATE, name=syscall_name))
         f.seek(0)
         f.writelines(contents)
 
