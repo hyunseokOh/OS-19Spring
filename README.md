@@ -36,6 +36,12 @@
 ## High Level Design and Implementation
 ![schematic](https://user-images.githubusercontent.com/25524539/54747238-ae10c380-4c11-11e9-836d-63085b9e61bb.png)
 
+### Implementation Detail
+- Indentation of `ptree` information
+    - `task_struct comm` has length as 16, `prinfo comm` has length as 64
+    - We have 48 extra spaces for characters in our `prinfo comm`
+    - We thought that kernel handles everything includes indentation is much more natural than user handles indentation while printing over loop
+    - Thus, we assumed there are no deep processes whose depth exceeds 48 and we padded `\t` in front of `prinfo comm`
 
 ## Test Result
 ### Case 1 - nr value 30
