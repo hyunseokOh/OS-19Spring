@@ -1,15 +1,13 @@
-#include <stdio.h>
-#include <stdint.h> /* int64_t */
-#include <stdlib.h> /* malloc */
-#include <string.h> /* strtol */
-#include <limits.h> /* INT_MAX, INT_MIN */
-#include <errno.h> /* errno */
+#include <errno.h>    /* errno */
 #include <inttypes.h> /* PRId64 */
+#include <limits.h>   /* INT_MAX, INT_MIN */
+#include <stdint.h>   /* int64_t */
+#include <stdio.h>
+#include <stdlib.h>      /* malloc */
+#include <string.h>      /* strtol */
 #include <sys/syscall.h> /* sycall method */
 #include <sys/types.h>   /* declaration of pid_t, etc. */
 #include <unistd.h>
-
-
 
 struct prinfo {
   int64_t state;          /* current state of process */
@@ -36,19 +34,18 @@ int main(int argc, char *argv[]) {
   char *endPtr = NULL;
   convertedNum = strtol(argv[1], &endPtr, 10);
 
-  if(*endPtr){ // endPtr points to NULL char only when the entire argument is a number
+  if (*endPtr) {
+    /* endPtr points to NULL char only when the entire argument is a number */
     printf("INVALID ARGUMENT: invalid character exists or no digits at all\n");
     return 0;
-  }
-  else if(errno != 0){ // errno is set to ERANGE if underflow or overflow occurs
+  } else if (errno != 0) {
+    /* errno is set to ERANGE if underflow or overflow occurs */
     printf("INVALID ARGUMENT: most likely overflow or underflow\n");
     return 0;
-  }
-  else if((convertedNum > INT_MAX) || (convertedNum < INT_MIN)){
+  } else if ((convertedNum > INT_MAX) || (convertedNum < INT_MIN)) {
     printf("INVALID ARGUMENT: number cannot be expressed as int'\n");
     return 0;
-  }
-  else{
+  } else {
     nr = (int)convertedNum;
     nrBefore = nr;
   }
@@ -57,8 +54,26 @@ int main(int argc, char *argv[]) {
 
   buf = (struct prinfo *)malloc(sizeof(struct prinfo) * nr);
 
-    int64_t syscallResult = 
-      syscall(398, buf, &nr);
+  int64_t syscallResult = syscall(398, buf, &nr);
+
+  if (syscallResult == -1) {
+    /* error on syscall */
+    switch (errno) {
+      case ENOMEM:
+        printf("ENOMEM: Allocation failed in kernel\n");
+        break;
+      case EFAULT:
+        printf("EFAULT: Memory copy failed in kernel\n");
+        break;
+      case EINVAL:
+        printf("EINVAL: Invalid argument of system call\n");
+        break;
+      default:
+        break;
+    }
+    free(buf);
+    return -1;
+  }
 
   for (int i = 0; i < nr; i++) {
     struct prinfo p = buf[i];
