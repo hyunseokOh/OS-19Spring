@@ -61,7 +61,7 @@ int main(int argc, char *argv[]) {
   char *endPtr = NULL;
 
   if (argc < 2) {
-    printf("Must pass starting integer argument\n");
+    printf("Must pass id number of trial\n");
     return 0;
   }
 
