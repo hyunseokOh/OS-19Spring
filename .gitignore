@@ -1,5 +1,9 @@
 ### test object file ###
 test/test
+trial
+selector
+rotd
+integer
 
 ### Traditional C gitignore ###
 
