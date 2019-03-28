@@ -1,5 +1,5 @@
-#define SYSCALL_ROTLOCK_WRITE 399
-#define SYSCALL_ROTUNLOCK_WRITE 401
+#define SYSCALL_ROTLOCK_READ 399
+#define SYSCALL_ROTUNLOCK_READ 401
 
 #include <errno.h>
 #include <limits.h>
