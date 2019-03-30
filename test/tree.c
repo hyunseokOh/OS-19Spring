@@ -5,6 +5,9 @@
 
 /* node related */
 struct lock_node *node_init(pid_t pid, int r_low, int r_high, int node_type) {
+  /*
+   * Constructor for lock_node
+   */
   struct lock_node *node = NULL;
   node = (struct lock_node *)malloc(sizeof(struct lock_node));
 
@@ -21,6 +24,9 @@ struct lock_node *node_init(pid_t pid, int r_low, int r_high, int node_type) {
 }
 
 void node_delete(struct lock_node *node) {
+  /*
+   * Free lock_node
+   */
   if (node == NULL) {
     return;
   }
@@ -28,6 +34,9 @@ void node_delete(struct lock_node *node) {
 }
 
 void print_node(struct lock_node *node) {
+  /*
+   * Print node information for debugging
+   */
   if (node == NULL) {
     return;
   }
@@ -41,6 +50,9 @@ void print_node(struct lock_node *node) {
 }
 
 int node_compare(struct lock_node *self, struct lock_node *other) {
+  /*
+   * Compare between lock_node. Compare rule is same as general tuple compare
+   */
   if (self->range[0] < other->range[0]) {
     return -1;
   } else if (self->range[0] > other->range[0]) {
@@ -95,6 +107,9 @@ struct lock_node *double_left_rotate(struct lock_node *node) {
 
 /* tree related */
 struct lock_tree *tree_init(void) {
+  /*
+   * constructor for lock_tree
+   */
   struct lock_tree *tree = NULL;
   tree = (struct lock_tree *)malloc(sizeof(struct lock_tree));
   tree->root = NULL;
@@ -103,6 +118,10 @@ struct lock_tree *tree_init(void) {
 }
 
 void tree_delete(struct lock_tree *self) {
+  /*
+   * free tree
+   * free all nodes then free tree
+   */
   struct lock_node *node;
   if (self == NULL) {
     return;
@@ -119,9 +138,14 @@ void tree_delete(struct lock_tree *self) {
 
 int tree_insert(struct lock_tree *self, pid_t pid, int degree, int range,
                 int node_type) {
+  /*
+   * Tree insertion wrapper
+   */
   struct lock_node *target = NULL;
   int r_low;
   int r_high;
+
+  /* errors */
   if (self->root != NULL && self->root->node_type != node_type) {
     return -EINVAL;
   }
@@ -143,6 +167,9 @@ int tree_insert(struct lock_tree *self, pid_t pid, int degree, int range,
 
 struct lock_node *tree_insert_(struct lock_node *root,
                                struct lock_node *target) {
+  /*
+   * Actual tree insertion
+   */
   if (root == NULL) {
     return target;
   }
@@ -151,6 +178,7 @@ struct lock_node *tree_insert_(struct lock_node *root,
     /* target is greater, go right */
     root->right = tree_insert_(root->right, target);
   } else {
+    /* go left */
     root->left = tree_insert_(root->left, target);
   }
 
@@ -161,6 +189,7 @@ struct lock_node *tree_insert_(struct lock_node *root,
 }
 
 struct lock_node *node_balance(struct lock_node *root) {
+  /* balance node based on height */
   int leftHeight;
   int rightHeight;
 
@@ -179,6 +208,7 @@ struct lock_node *node_balance(struct lock_node *root) {
   }
 
   if (rightHeight - leftHeight == 2) {
+    /* right heavy */
     if (height(root->right->left) > height(root->right->right)) {
       /* double rotation */
       root = double_left_rotate(root);
@@ -192,6 +222,9 @@ struct lock_node *node_balance(struct lock_node *root) {
 
 struct lock_node *tree_delete_(struct lock_node *root,
                                struct lock_node *target) {
+  /*
+   * Deletion for find tree
+   */
   struct lock_node *smallest;
   int compare;
 
@@ -231,10 +264,17 @@ struct lock_node *tree_delete_(struct lock_node *root,
 }
 
 struct lock_list *tree_find(struct lock_tree *self, int degree) {
+  struct lock_list *result;
   if (self->root == NULL) {
     return NULL;
   }
-  struct lock_list *result = list_init();
+
+  if (degree < -179 || degree > 538) {
+    /* invalid range */
+    return NULL;
+  }
+
+  result = list_init();
   if (degree < 180) {
     self->root = tree_find_(self->root, degree, &result, self->root->node_type);
     self->root =
@@ -264,13 +304,14 @@ struct lock_node *tree_find_(struct lock_node *root, int degree,
   r_high = root->range[1];
 
   if (r_low <= degree && degree <= r_high) {
-    /* found */
-    /* push, delete and go on */
+    /* 
+     * found
+     * push into list, delete from tree and go on 
+     */
     if (node_type == WRITER) {
       if (list_size(*result) == 0) {
         list_push(*result, root);
         root = tree_delete_(root, root);
-        root = tree_find_(root, degree, result, node_type);
       }
     } else {
       list_push(*result, root);
@@ -290,6 +331,9 @@ struct lock_node *tree_find_(struct lock_node *root, int degree,
 
 void print_tree(struct lock_tree *self) { print_tree_(self->root, 0); }
 void print_tree_(struct lock_node *root, int indent) {
+  /*
+   * Print tree structure for debugging
+   */
   if (root == NULL) {
     return;
   }
