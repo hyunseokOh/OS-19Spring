@@ -25,10 +25,10 @@ int main(void) {
     tree_insert(tree, pid++, degree, range, READER);
   }
 
-  print_tree(tree);
-  printf("\n\n");
+  /*print_tree(tree);*/
+  /*printf("\n\n");*/
   list = tree_find(tree, 30);
-  print_tree(tree);
+  /*print_tree(tree);*/
 
   printf("List Size = %d\n", list_size(list));
 

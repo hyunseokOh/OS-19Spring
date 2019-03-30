@@ -7,6 +7,13 @@
   ((height(node1) > height(node2)) ? height(node1) : height(node2))
 #define height(node) ((node == NULL) ? 0 : node->height)
 
+#ifdef DEBUG
+#undef DEBUG
+#define DEBUG 1
+#else
+#define DEBUG 0
+#endif
+
 #include <sys/types.h>
 
 struct lock_node {

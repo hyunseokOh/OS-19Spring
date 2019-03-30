@@ -83,7 +83,9 @@ struct lock_node *right_rotate(struct lock_node *node) {
 
   node->height = 1 + MAX_HEIGHT(node->left, node->right);
   left->height = 1 + MAX_HEIGHT(left->left, left->right);
+  return left;
 }
+
 struct lock_node *left_rotate(struct lock_node *node) {
   struct lock_node *right = node->right;
   struct lock_node *rightLeft = right->left;
@@ -93,12 +95,15 @@ struct lock_node *left_rotate(struct lock_node *node) {
 
   node->height = 1 + MAX_HEIGHT(node->left, node->right);
   right->height = 1 + MAX_HEIGHT(right->left, right->right);
+  return right;
 }
+
 struct lock_node *double_right_rotate(struct lock_node *node) {
   struct lock_node *left = node->left;
   node->left = left_rotate(left);
   return right_rotate(node);
 }
+
 struct lock_node *double_left_rotate(struct lock_node *node) {
   struct lock_node *right = node->right;
   node->right = right_rotate(right);
@@ -276,9 +281,20 @@ struct lock_list *tree_find(struct lock_tree *self, int degree) {
 
   result = list_init();
   if (degree < 180) {
+    if (DEBUG) {
+      print_tree_(self->root, 0);
+      printf("\n\n");
+    }
     self->root = tree_find_(self->root, degree, &result, self->root->node_type);
+    if (DEBUG) {
+      print_tree_(self->root, 0);
+      }
     self->root =
         tree_find_(self->root, degree + 360, &result, self->root->node_type);
+    if (DEBUG) {
+      printf("\n\n");
+      print_tree_(self->root, 0);
+    }
   } else if (degree > 180) {
     self->root = tree_find_(self->root, degree, &result, self->root->node_type);
     self->root =
@@ -295,7 +311,7 @@ struct lock_node *tree_find_(struct lock_node *root, int degree,
                              struct lock_list **result, int node_type) {
   int r_low;
   int r_high;
-  struct lock_node *smallest;
+  struct lock_node *temp;
   if (root == NULL) {
     return NULL;
   }
@@ -308,15 +324,18 @@ struct lock_node *tree_find_(struct lock_node *root, int degree,
      * found
      * push into list, delete from tree and go on 
      */
+    temp = root;
+    
     if (node_type == WRITER) {
       if (list_size(*result) == 0) {
-        list_push(*result, root);
-        root = tree_delete_(root, root);
+        list_push(*result, temp);
+        root = tree_delete_(root, temp);
       }
     } else {
-      list_push(*result, root);
-      root = tree_delete_(root, root);
+      list_push(*result, temp);
+      root = tree_delete_(root, temp);
       root = tree_find_(root, degree, result, node_type);
+      /*tree_find_(root, degree, result, node_type);*/
     }
   } else {
     if (degree < r_low) {
@@ -326,6 +345,12 @@ struct lock_node *tree_find_(struct lock_node *root, int degree,
       root->right = tree_find_(root->right, degree, result, node_type);
     }
   }
+
+  if (root != NULL) {
+    root->height = 1 + MAX_HEIGHT(root->left, root->right);
+    root = node_balance(root);
+  }
+
   return root;
 }
 
@@ -408,6 +433,7 @@ struct lock_node *list_pop(struct lock_list *self) {
     node = self->head;
     self->head = self->head->next;
     self->size--;
+    return node;
   } else {
     return NULL;
   }
