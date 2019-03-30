@@ -19,7 +19,7 @@ int64_t rotunlock_read(int degree, int range) { return 0; }
 int64_t rotunlock_write(int degree, int range) { return 0; }
 
 asmlinkage long sys_set_rotation(int degree) {
-  set_rotation(kernelDegree);
+  set_rotation(degree);
   return 0;
 }
 
