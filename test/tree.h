@@ -50,8 +50,8 @@ struct lock_node *tree_insert_(struct lock_node *root,
                                struct lock_node *target);
 
 struct lock_list *tree_find(struct lock_tree *self, int degree);
-struct lock_node *tree_find_(struct lock_node *root, int degree,
-                             struct lock_list **target, int node_type);
+void tree_find_(struct lock_node *root, int degree, struct lock_list **target,
+                int node_type, struct lock_tree *origin);
 struct lock_node *tree_delete_(struct lock_node *root,
                                struct lock_node *target);
 void print_tree(struct lock_tree *self);
@@ -70,5 +70,6 @@ void list_delete(struct lock_list *self);
 int list_size(struct lock_list *self);
 void list_push(struct lock_list *self, struct lock_node *node);
 struct lock_node *list_pop(struct lock_list *self);
+void list_print(struct lock_list *self);
 
 #endif

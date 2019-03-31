@@ -285,73 +285,65 @@ struct lock_list *tree_find(struct lock_tree *self, int degree) {
       print_tree_(self->root, 0);
       printf("\n\n");
     }
-    self->root = tree_find_(self->root, degree, &result, self->root->node_type);
+    tree_find_(self->root, degree, &result, self->root->node_type, self);
     if (DEBUG) {
       print_tree_(self->root, 0);
-      }
-    self->root =
-        tree_find_(self->root, degree + 360, &result, self->root->node_type);
+    }
+    tree_find_(self->root, degree + 360, &result, self->root->node_type, self);
     if (DEBUG) {
       printf("\n\n");
       print_tree_(self->root, 0);
     }
   } else if (degree > 180) {
-    self->root = tree_find_(self->root, degree, &result, self->root->node_type);
-    self->root =
-        tree_find_(self->root, degree - 360, &result, self->root->node_type);
+    tree_find_(self->root, degree, &result, self->root->node_type, self);
+    tree_find_(self->root, degree - 360, &result, self->root->node_type, self);
   } else {
     /* just find 180 */
-    self->root = tree_find_(self->root, degree, &result, self->root->node_type);
+    tree_find_(self->root, degree, &result, self->root->node_type, self);
   }
 
   return result;
 }
 
-struct lock_node *tree_find_(struct lock_node *root, int degree,
-                             struct lock_list **result, int node_type) {
+void tree_find_(struct lock_node *root, int degree, struct lock_list **result,
+                int node_type, struct lock_tree *origin) {
   int r_low;
   int r_high;
   struct lock_node *temp;
   if (root == NULL) {
-    return NULL;
+    return;
   }
 
   r_low = root->range[0];
   r_high = root->range[1];
 
   if (r_low <= degree && degree <= r_high) {
-    /* 
+    /*
      * found
-     * push into list, delete from tree and go on 
+     * push into list, delete from tree and go on
      */
     temp = root;
-    
+    if (DEBUG) {
+      printf("FOUND %d <= %d <= %d\n", r_low, degree, r_high);
+    }
+
     if (node_type == WRITER) {
       if (list_size(*result) == 0) {
         list_push(*result, temp);
-        root = tree_delete_(root, temp);
+        origin->root = tree_delete_(origin->root, temp);
       }
     } else {
       list_push(*result, temp);
-      root = tree_delete_(root, temp);
-      root = tree_find_(root, degree, result, node_type);
+      origin->root = tree_delete_(origin->root, temp);
+      tree_find_(origin->root, degree, result, node_type, origin);
       /*tree_find_(root, degree, result, node_type);*/
     }
+    temp->left = NULL;
+    temp->right = NULL;
   } else {
-    if (degree < r_low) {
-      /* search left */
-      root->left = tree_find_(root->left, degree, result, node_type);
-    } else {
-      root->right = tree_find_(root->right, degree, result, node_type);
-    }
+    tree_find_(root->left, degree, result, node_type, origin);
+    tree_find_(root->right, degree, result, node_type, origin);
   }
-
-  if (root != NULL) {
-    root->height = 1 + MAX_HEIGHT(root->left, root->right);
-    root = node_balance(root);
-  }
-
-  return root;
 }
 
 void print_tree(struct lock_tree *self) { print_tree_(self->root, 0); }
@@ -436,5 +428,24 @@ struct lock_node *list_pop(struct lock_list *self) {
     return node;
   } else {
     return NULL;
+  }
+}
+
+void list_print(struct lock_list *self) {
+  struct lock_node *node;
+  int num = 1;
+
+  if (self == NULL) {
+    return;
+  }
+
+  node = self->head;
+  while (node != NULL) {
+    printf(
+        "[%d] PID: %d (%p), range = [%d, %d], LEFT = %p, RIGHT = %p, NEXT = "
+        "%p\n",
+        num++, node->pid, node, node->range[0], node->range[1], node->left,
+        node->right, node->next);
+    node = node->next;
   }
 }

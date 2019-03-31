@@ -78,7 +78,7 @@ struct lock_node *tree_insert_(struct lock_node *root,
 struct lock_node *tree_delete_(struct lock_node *root,
                                struct lock_node *target);
 int tree_find_(struct lock_node *root, int low, int high);
-struct lock_node *tree_awake_(struct lock_node *root, int degree, int type,
+void tree_awake_(struct lock_node *root, int degree, int type,
                               int *totalAwaken);
 
 #endif

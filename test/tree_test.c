@@ -1,8 +1,8 @@
+#include "tree.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <time.h>
-#include "tree.h"
 
 static pid_t pid = 0;
 
@@ -18,7 +18,7 @@ int main(void) {
   int range;
   tree = tree_init();
 
-  for (int i = 0; i < 20; i++) {
+  for (int i = 0; i < 5000; i++) {
     degree = rand() % 360;
     range = rand() % 179 + 1;
 
@@ -37,6 +37,8 @@ int main(void) {
   } else {
     printf("Sorted Test Failed\n");
   }
+
+  list_print(list);
 
   tree_delete(tree);
 }

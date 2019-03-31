@@ -178,18 +178,16 @@ static inline int tree_awake(int type) {
   }
 
   if (currentDegree < 180) {
-    self->root = tree_awake_(self->root, currentDegree, type, &totalAwaken);
-    self->root =
-        tree_awake_(self->root, currentDegree + 360, type, &totalAwaken);
+    tree_awake_(self->root, currentDegree, type, &totalAwaken);
+    tree_awake_(self->root, currentDegree + 360, type, &totalAwaken);
   } else if (currentDegree > 180) {
-    self->root = tree_awake_(self->root, currentDegree, type, &totalAwaken);
-    self->root =
-        tree_awake_(self->root, currentDegree - 360, type, &totalAwaken);
+    tree_awake_(self->root, currentDegree, type, &totalAwaken);
+    tree_awake_(self->root, currentDegree - 360, type, &totalAwaken);
   } else {
     /*
      * CurrentDegree == 180
      */
-    self->root = tree_awake_(self->root, currentDegree, type, &totalAwaken);
+    tree_awake_(self->root, currentDegree, type, &totalAwaken);
   }
 
   return totalAwaken;
@@ -281,13 +279,13 @@ int tree_find_(struct lock_node *root, int low, int high) {
   }
 }
 
-struct lock_node *tree_awake_(struct lock_node *root, int degree, int type,
+void tree_awake_(struct lock_node *root, int degree, int type,
                               int *totalAwaken) {
   int r_low;
   int r_high;
   struct lock_node *removed;
   if (root == NULL) {
-    return NULL;
+    return;
   }
 
   r_low = root->range[0];
@@ -303,30 +301,21 @@ struct lock_node *tree_awake_(struct lock_node *root, int degree, int type,
       if (type == WRITER) {
         writerLocked.root = tree_insert_(writerLocked.root, removed);
         *totalAwaken = *totalAwaken + 1;
-        root = tree_delete_(root, removed);
+        writerRequested.root = tree_delete_(writerRequested.root, removed);
       } else {
         readerLocked.root = tree_insert_(readerLocked.root, removed);
         *totalAwaken = *totalAwaken + 1;
-        root = tree_delete_(root, removed);
-        root = tree_awake_(root, degree, type, totalAwaken);
+        readerRequested.root = tree_delete_(readerRequested.root, removed);
+        tree_awake_(readerRequested.root, degree, type, totalAwaken);
       }
       removed->left = NULL;
       removed->right = NULL;
       removed->grab = 1;
     }
   } else {
-    if (degree < r_low) {
-      root->left = tree_awake_(root->left, degree, type, totalAwaken);
-    } else {
-      root->right = tree_awake_(root->right, degree, type, totalAwaken);
-    }
+    tree_awake_(root->left, degree, type, totalAwaken);
+    tree_awake_(root->right, degree, type, totalAwaken);
   }
-
-  if (root != NULL) {
-    UPDATE_HEIGHT(root);
-    root = node_balance(root);
-  }
-  return root;
 }
 
 int64_t set_rotation(int degree) {
