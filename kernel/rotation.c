@@ -1,6 +1,7 @@
 #include <linux/linkage.h>
 #include <linux/mutex.h>
 #include <linux/printk.h>
+#include <linux/rbtree.h>
 #include <linux/rotation.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -13,41 +14,23 @@
 DEFINE_MUTEX(rotlock_mutex);  /* for access shared data */
 static int currentDegree = 0; /* current device rotation */
 
-/* tree for write lock request */
-static struct lock_tree writerRequested = {.root = NULL};
-/* tree for reader lock request */
-static struct lock_tree readerRequested = {.root = NULL};
-/* tree for locked writer */
-static struct lock_tree writerLocked = {.root = NULL};
-/* tree for locked reader */
-static struct lock_tree readerLocked = {.root = NULL};
+static struct rb_root writerTree = RB_ROOT;
+static struct rb_root readerTree = RB_ROOT;
 
-/*
- * Lock Node Related functions
- */
 static inline struct lock_node *node_init(int r_low, int r_high) {
   /*
    * Constructor for lock_node
    */
   struct lock_node *node = NULL;
-  struct task_struct *task = NULL;
   node = (struct lock_node *)kmalloc(sizeof(struct lock_node), GFP_KERNEL);
-
   if (node == NULL) {
     /* kmalloc failed */
     return NULL;
   }
-
-  task = current;
-
   node->pid = current->pid;
-  node->range[0] = r_low;
-  node->range[1] = r_high;
-  node->height = 1;
+  node->low = r_low;
+  node->high = r_high;
   node->grab = 0;
-  node->left = NULL;
-  node->right = NULL;
-  node->task = task;
 
   return node;
 }
@@ -57,297 +40,165 @@ static inline int node_compare(struct lock_node *self,
   /*
    * Compare between 2 lock nodes
    */
-  if (self->range[0] < other->range[0]) {
+  if (self->low < other->low) {
     return -1;
-  } else if (self->range[0] > other->range[0]) {
+  } else if (self->low > other->low) {
     return 1;
   } else {
-    if (self->range[1] < other->range[1]) {
+    if (self->high < other->high) {
       return -1;
-    } else if (self->range[1] > other->range[1]) {
+    } else if (self->high > other->high) {
       return 1;
     } else {
-      if (self->pid < other->pid) {
-        return -1;
-      } else if (self->pid > other->pid) {
-        return 1;
+      return self->pid - other->pid;
+    }
+  }
+}
+
+static inline struct lock_node *intersect_exist(struct rb_root *root, int low,
+                                                int high, int grabCheck) {
+  struct lock_node *data = NULL;
+  struct rb_node *node = NULL;
+  int d_low;
+  int d_high;
+
+  node = root->rb_node;
+
+  for (node = rb_first(root); node; node = rb_next(node)) {
+    /* check inorder */
+    data = rb_entry(node, struct lock_node, node);
+    d_low = data->low;
+    d_high = data->high;
+    if (low <= d_high && high >= d_low) {
+      /* inter section found */
+      if (grabCheck) {
+        if (data->grab) {
+          return data;
+        }
       } else {
-        return 0;
+        return data;
       }
     }
   }
+  return NULL;
 }
 
-static inline struct lock_node *node_balance(struct lock_node *root) {
-  int leftHeight;
-  int rightHeight;
+static inline int tree_insert(struct rb_root *root, struct lock_node *target) {
+  struct rb_node **new = &(root->rb_node);
+  struct rb_node *parent = NULL;
+  struct lock_node *this;
+  int compare;
 
-  leftHeight = HEIGHT(root->left);
-  rightHeight = HEIGHT(root->right);
+  while (*new) {
+    this = container_of(*new, struct lock_node, node);
+    compare = node_compare(target, this);
 
-  if (leftHeight - rightHeight == 2) {
-    if (HEIGHT(root->left->right) > HEIGHT(root->left->left)) {
-      root = DOUBLE_RIGHT_ROTATE(root);
+    parent = *new;
+    if (compare < 0) {
+      /* target is smaller */
+      new = &((*new)->rb_left);
+    } else if (compare > 0) {
+      new = &((*new)->rb_right);
     } else {
-      root = RIGHT_ROTATE(root);
+      /* insert failed */
+      return 0;
     }
   }
+  rb_link_node(&target->node, parent, new);
+  rb_insert_color(&target->node, root);
+  return 1;
+}
 
-  if (rightHeight - leftHeight == 2) {
-    if (HEIGHT(root->right->left) > HEIGHT(root->right->right)) {
-      root = DOUBLE_LEFT_ROTATE(root);
+static inline struct lock_node *tree_search(struct rb_root *root,
+                                            struct lock_node *target) {
+  /* search for exact match */
+  struct rb_node *node;
+  struct lock_node *data;
+  int compare;
+
+  node = root->rb_node;
+
+  while (node) {
+    data = container_of(node, struct lock_node, node);
+    compare = node_compare(target, data);
+    if (compare < 0) {
+      /* target < data */
+      node = node->rb_left;
+    } else if (compare > 0) {
+      /* target > data */
+      node = node->rb_right;
     } else {
-      root = LEFT_ROTATE(root);
+      return data;
     }
   }
-
-  return root;
+  return NULL;
 }
 
-static inline void tree_free(struct lock_tree *self) {
-  /*
-   * free given tree pointer
-   * (maybe not be needed)
-   */
-  struct lock_node *node = NULL;
-  int deleteSuccess = 0;
-
-  if (self == NULL) {
-    return;
+static inline int tree_delete(struct rb_root *root, struct lock_node *target) {
+  struct lock_node *data = tree_search(root, target);
+  if (data != NULL) {
+    rb_erase(&(data->node), root);
+    kfree(data);
+    return 1;
   }
-
-  node = self->root;
-  while (node != NULL) {
-    self->root = tree_delete_(self->root, node, &deleteSuccess);
-    kfree(node);
-    node = self->root;
-  }
-  kfree(self);
-}
-
-static inline int tree_insert(struct lock_tree *self, int degree, int range) {
-  struct lock_node *target = NULL;
-  int r_low;
-  int r_high;
-
-  if (self == NULL) {
-    return -EINVAL;
-  }
-
-  if (degree < 0 || degree >= 360) {
-    return -EINVAL;
-  }
-
-  if (range <= 0 || range >= 180) {
-    return -EINVAL;
-  }
-
-  r_low = degree - range;
-  r_high = degree + range;
-  target = node_init(r_low, r_high);
-  self->root = tree_insert_(self->root, target);
   return 0;
 }
 
-static inline int tree_delete(struct lock_node *target, int type) {
-  struct lock_tree *self = NULL;
-  int deleteSuccess = 0;
+static inline int grab_locks(int type) {
+  struct rb_node *node;
+  struct rb_root *root;
+  struct lock_node *data;
+  int totalGrab = 0;
+  int d_low;
+  int d_high;
 
   if (type == WRITER) {
-    self = &writerLocked;
+    root = &writerTree;
   } else {
-    self = &readerLocked;
+    root = &readerTree;
   }
 
-  self->root = tree_delete_(self->root, target, &deleteSuccess);
+  node = root->rb_node;
 
-  return deleteSuccess;
-}
+  for (node = rb_first(root); node; node = rb_next(node)) {
+    /* check inorder */
+    data = rb_entry(node, struct lock_node, node);
+    d_low = data->low;
+    d_high = data->high;
+    if (d_low <= currentDegree && currentDegree <= d_high) {
+      /* possible candidate */
+      if (!data->grab) {
+        if (type == WRITER) {
+          /*
+           * Writer can grab lock iff
+           *  1. No writer grabs lock intersected range currently
+           *  2. No reader grabs lock intersected range currently
+           */
+          if (intersect_exist(&writerTree, d_low, d_high, 1) == NULL &&
+              intersect_exist(&readerTree, d_low, d_high, 1) == NULL) {
+            /* can grab! */
+            data->grab = 1;
+            totalGrab++;
 
-static inline int tree_awake(int type) {
-  /*
-   * Should be called inside of set_rotation
-   * Wrapper function of recursive function tree_awake_,
-   * which traverse requestedTree and if currentDegree is inside of node range,
-   * remove that node from requestedTree, and insert into lockedTree with
-   * node->grab = 1
-   * This function returns whole number of awakened node
-   *
-   * Support polymorphism for both readerTree and writerTree
-   */
-  struct lock_tree *self;
-  int totalAwaken;
-
-  if (type == WRITER) {
-    self = &writerRequested;
-  } else {
-    self = &readerRequested;
-  }
-
-  totalAwaken = 0;
-
-  if (self == NULL) {
-    return 0;
-  }
-  if (currentDegree < -179 || currentDegree > 538) {
-    return -1;
-  }
-
-  if (currentDegree < 180) {
-    tree_awake_(self->root, currentDegree, type, &totalAwaken);
-    tree_awake_(self->root, currentDegree + 360, type, &totalAwaken);
-  } else if (currentDegree > 180) {
-    tree_awake_(self->root, currentDegree, type, &totalAwaken);
-    tree_awake_(self->root, currentDegree - 360, type, &totalAwaken);
-  } else {
-    /*
-     * CurrentDegree == 180
-     */
-    tree_awake_(self->root, currentDegree, type, &totalAwaken);
-  }
-
-  return totalAwaken;
-}
-
-struct lock_node *tree_insert_(struct lock_node *root,
-                               struct lock_node *target) {
-  if (root == NULL) {
-    return target;
-  }
-
-  if (node_compare(root, target) < 0) {
-    root->right = tree_insert_(root->right, target);
-  } else {
-    root->left = tree_insert_(root->left, target);
-  }
-
-  UPDATE_HEIGHT(root);
-  root = node_balance(root);
-  return root;
-}
-
-struct lock_node *tree_delete_(struct lock_node *root,
-                               struct lock_node *target,
-                               int *deleteSuccess) {
-  struct lock_node *leftmost;
-  int compare;
-
-  if (root == NULL) {
-    return NULL;
-  }
-  if (target == NULL) {
-    return root;
-  }
-
-  compare = node_compare(root, target);
-
-  if (compare == 1) {
-    /* root is bigger */
-    root->left = tree_delete_(root->left, target, deleteSuccess);
-  } else if (compare == -1) {
-    root->right = tree_delete_(root->right, target, deleteSuccess);
-  } else {
-    *deleteSuccess = 1;
-    if (root->left == NULL && root->right == NULL) {
-      return NULL;
-    } else if (root->left == NULL && root->right != NULL) {
-      root = root->right;
-    } else if (root->left != NULL && root->right == NULL) {
-      root = root->left;
-    } else {
-      leftmost = LEFTMOST_CHILD(root->right);
-      root->right = tree_delete_(root->right, leftmost, deleteSuccess);
-      leftmost->right = root->right;
-      leftmost->left = root->left;
-      root = leftmost;
-    }
-  }
-  UPDATE_HEIGHT(root);
-  root = node_balance(root);
-  return root;
-}
-
-int tree_find_(struct lock_node *root, int low, int high) {
-  /*
-   * Check whether intersection exists
-   */
-  int r_low;
-  int r_high;
-
-  if (root == NULL) {
-    return 0;
-  }
-
-  r_low = root->range[0];
-  r_high = root->range[1];
-
-  if (INTERSECT(r_low, low, r_high, high)) {
-    /*
-     * TODO (taebum): Does intersection includes same boundary?
-     * is this condition fully cover all intersections?
-     */
-    return 1;
-  } else {
-    if (r_high <= low) {
-      return tree_find_(root->right, low, high);
-    } else {
-      /* r_low >= high */
-      return tree_find_(root->left, low, high);
-    }
-  }
-}
-
-void tree_awake_(struct lock_node *root, int degree, int type,
-                              int *totalAwaken) {
-  int r_low;
-  int r_high;
-  struct lock_node *removed;
-  int success;
-  if (root == NULL) {
-    return;
-  }
-
-  r_low = root->range[0];
-  r_high = root->range[1];
-
-  if (r_low <= degree && degree <= r_high) {
-    removed = root;
-    if (type == WRITER) {
-      /*
-       * If this writer wants to grab a lock,
-       *  1. No current writer lock exist
-       *  2. No current reader lock exist
-       */
-      if (!tree_find_(writerLocked.root, r_low, r_high) && !tree_find_(readerLocked.root, r_low, r_high)) {
-        writerRequested.root = tree_delete_(writerRequested.root, removed, &success);
-        *totalAwaken = *totalAwaken + 1;
-        removed->left = NULL;
-        removed->right = NULL;
-        writerLocked.root = tree_insert_(writerLocked.root, removed);
-        removed->grab = 1;
-      }
-    } else {
-      /*
-       * If this reader wants to grab a lock
-       *  1. No current writer lock exist
-       *  2. No writer is waiting for this range
-       */
-      if (!tree_find_(writerLocked.root, r_low, r_high) && !tree_find_(writerRequested.root, r_low, r_high)) {
-        readerRequested.root = tree_delete_(readerRequested.root, removed, &success);
-        *totalAwaken = *totalAwaken + 1;
-        removed->left = NULL;
-        removed->right = NULL;
-        readerLocked.root = tree_insert_(readerLocked.root, removed);
-        removed->grab = 1;
-
-        /* start from root again since multiple reader locks allowed */
-        tree_awake_(readerRequested.root, degree, type, totalAwaken);
+            /* no more writer available in currentDegree*/
+            break;
+          }
+        } else {
+          /*
+           * Reader can grab lock iff
+           *  1. No writer grabs lock intersected range currently
+           *  2. No writer waits lock intersected range currently
+           */
+          if (intersect_exist(&writerTree, d_low, d_high, 0) == NULL) {
+            /* can grab! */
+            data->grab = 1;
+            totalGrab++;
+          }
+        }
       }
     }
-  } else {
-    tree_awake_(root->left, degree, type, totalAwaken);
-    tree_awake_(root->right, degree, type, totalAwaken);
   }
+  return totalGrab;
 }
 
 int64_t set_rotation(int degree) {
@@ -359,12 +210,15 @@ int64_t set_rotation(int degree) {
   currentDegree = degree;
 
   /* First, look writer */
-  result += (int64_t)tree_awake(WRITER);
+  result += (int64_t)grab_locks(WRITER);
 
-  /* Should return 0 if writer already grabbed lock */
-  result += (int64_t)tree_awake(READER);
+  if (result == 0) {
+    /* Should return 0 if writer already grabbed lock */
+    result += (int64_t)grab_locks(READER);
+  }
 
-  printk("GONGLE: Current Rotation = %d, Awaked %lld nodes\n", currentDegree, result);
+  printk("GONGLE: Current Rotation = %d, Awaked %lld nodes\n", currentDegree,
+         result);
 
   mutex_unlock(&rotlock_mutex);
   return result;
@@ -386,27 +240,16 @@ int64_t rotlock_read(int degree, int range) {
   r_high = degree + range;
 
   /* lock before access shared data structure */
-  mutex_lock(&rotlock_mutex);
   target = node_init(r_low, r_high);
-  if (r_low <= currentDegree && currentDegree <= r_high) {
-    if (!tree_find_(writerLocked.root, r_low, r_high)) {
-      /* grab lock directly */
-      target->grab = 1;
-      readerLocked.root = tree_insert_(readerLocked.root, target);
-      mutex_unlock(&rotlock_mutex);
-      return 0;
-    }
+  if (target == NULL) {
+    return -ENOMEM;
   }
-  /*
-   * write lock exists or currentDegree is not in range
-   * insert to requestTree and wait
-   */
-  readerRequested.root = tree_insert_(readerRequested.root, target);
+
+  /* shared data access */
+  mutex_lock(&rotlock_mutex);
+  tree_insert(&readerTree, target);
+  grab_locks(READER);
   mutex_unlock(&rotlock_mutex);
-  /*
-   * TODO (taebum)
-   * Block process
-   */
 
   return 0;
 }
@@ -434,29 +277,14 @@ int64_t rotlock_write(int degree, int range) {
   }
 
   mutex_lock(&rotlock_mutex);
-  if (r_low <= currentDegree && currentDegree <= r_high) {
-    if (!tree_find_(writerLocked.root, r_low, r_high) && !tree_find_(readerLocked.root, r_low, r_high)) {
-      /* grab lock directly */
-      printk("GONGLE: grab directly\n");
-      target->grab = 1;
-      writerLocked.root = tree_insert_(writerLocked.root, target);
-      mutex_unlock(&rotlock_mutex);
-      return 0;
-    }
-  }
-
-  printk("GONGLE: add to request\n");
-  writerRequested.root = tree_insert_(writerRequested.root, target);
+  tree_insert(&writerTree, target);
+  grab_locks(WRITER);
   mutex_unlock(&rotlock_mutex);
-  /*
-   * TODO (taebum)
-   * Block process
-   */
   return 0;
 }
 
-int64_t rotunlock_read(int degree, int range) { 
-  struct lock_node target ;
+int64_t rotunlock_read(int degree, int range) {
+  struct lock_node target;
   int r_low;
   int r_high;
 
@@ -470,19 +298,19 @@ int64_t rotunlock_read(int degree, int range) {
   r_low = degree - range;
   r_high = degree + range;
 
-  target.range[0] = r_low;
-  target.range[1] = r_high;
+  target.low = r_low;
+  target.high = r_high;
   target.pid = current->pid;
 
   mutex_lock(&rotlock_mutex);
-  tree_delete(&target, READER);
+  tree_delete(&readerTree, &target);
   mutex_unlock(&rotlock_mutex);
 
-  return 0; 
+  return 0;
 }
 
-int64_t rotunlock_write(int degree, int range) { 
-  struct lock_node target ;
+int64_t rotunlock_write(int degree, int range) {
+  struct lock_node target;
   int r_low;
   int r_high;
   int deleteResult;
@@ -497,20 +325,20 @@ int64_t rotunlock_write(int degree, int range) {
   r_low = degree - range;
   r_high = degree + range;
 
-  target.range[0] = r_low;
-  target.range[1] = r_high;
+  target.low = r_low;
+  target.high = r_high;
   target.pid = current->pid;
 
   mutex_lock(&rotlock_mutex);
-  deleteResult = tree_delete(&target, WRITER);
+  deleteResult = tree_delete(&writerTree, &target);
   if (deleteResult) {
-    printk("GOGLE: unlock successed\n");
+    printk("GONGLE: unlock successed\n");
   } else {
-    printk("GOGLE: unlock failed :(\n");
+    printk("GONGLE: unlock failed :(\n");
   }
   mutex_unlock(&rotlock_mutex);
 
-  return 0; 
+  return 0;
 }
 
 asmlinkage long sys_set_rotation(int degree) { return set_rotation(degree); }
