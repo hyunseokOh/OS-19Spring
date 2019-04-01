@@ -110,6 +110,7 @@ static inline void tree_free(struct lock_tree *self) {
    * (maybe not be needed)
    */
   struct lock_node *node = NULL;
+  int deleteSuccess = 0;
 
   if (self == NULL) {
     return;
@@ -117,7 +118,7 @@ static inline void tree_free(struct lock_tree *self) {
 
   node = self->root;
   while (node != NULL) {
-    self->root = tree_delete_(self->root, node);
+    self->root = tree_delete_(self->root, node, &deleteSuccess);
     kfree(node);
     node = self->root;
   }
@@ -146,6 +147,21 @@ static inline int tree_insert(struct lock_tree *self, int degree, int range) {
   target = node_init(r_low, r_high);
   self->root = tree_insert_(self->root, target);
   return 0;
+}
+
+static inline int tree_delete(struct lock_node *target, int type) {
+  struct lock_tree *self = NULL;
+  int deleteSuccess = 0;
+
+  if (type == WRITER) {
+    self = &writerLocked;
+  } else {
+    self = &readerLocked;
+  }
+
+  self->root = tree_delete_(self->root, target, &deleteSuccess);
+
+  return deleteSuccess;
 }
 
 static inline int tree_awake(int type) {
@@ -211,7 +227,8 @@ struct lock_node *tree_insert_(struct lock_node *root,
 }
 
 struct lock_node *tree_delete_(struct lock_node *root,
-                               struct lock_node *target) {
+                               struct lock_node *target,
+                               int *deleteSuccess) {
   struct lock_node *leftmost;
   int compare;
 
@@ -226,10 +243,11 @@ struct lock_node *tree_delete_(struct lock_node *root,
 
   if (compare == 1) {
     /* root is bigger */
-    root->left = tree_delete_(root->left, target);
+    root->left = tree_delete_(root->left, target, deleteSuccess);
   } else if (compare == -1) {
-    root->right = tree_delete_(root->right, target);
+    root->right = tree_delete_(root->right, target, deleteSuccess);
   } else {
+    *deleteSuccess = 1;
     if (root->left == NULL && root->right == NULL) {
       return NULL;
     } else if (root->left == NULL && root->right != NULL) {
@@ -238,7 +256,7 @@ struct lock_node *tree_delete_(struct lock_node *root,
       root = root->left;
     } else {
       leftmost = LEFTMOST_CHILD(root->right);
-      root->right = tree_delete_(root->right, leftmost);
+      root->right = tree_delete_(root->right, leftmost, deleteSuccess);
       leftmost->right = root->right;
       leftmost->left = root->left;
       root = leftmost;
@@ -284,6 +302,7 @@ void tree_awake_(struct lock_node *root, int degree, int type,
   int r_low;
   int r_high;
   struct lock_node *removed;
+  int success;
   if (root == NULL) {
     return;
   }
@@ -293,24 +312,37 @@ void tree_awake_(struct lock_node *root, int degree, int type,
 
   if (r_low <= degree && degree <= r_high) {
     removed = root;
-    if (!tree_find_(writerLocked.root, r_low, r_high)) {
+    if (type == WRITER) {
       /*
-       * No writer grabs lock in this range
-       * Allocate lock to writer first, else to reader
+       * If this writer wants to grab a lock,
+       *  1. No current writer lock exist
+       *  2. No current reader lock exist
        */
-      if (type == WRITER) {
+      if (!tree_find_(writerLocked.root, r_low, r_high) && !tree_find_(readerLocked.root, r_low, r_high)) {
+        writerRequested.root = tree_delete_(writerRequested.root, removed, &success);
+        *totalAwaken = *totalAwaken + 1;
+        removed->left = NULL;
+        removed->right = NULL;
         writerLocked.root = tree_insert_(writerLocked.root, removed);
+        removed->grab = 1;
+      }
+    } else {
+      /*
+       * If this reader wants to grab a lock
+       *  1. No current writer lock exist
+       *  2. No writer is waiting for this range
+       */
+      if (!tree_find_(writerLocked.root, r_low, r_high) && !tree_find_(writerRequested.root, r_low, r_high)) {
+        readerRequested.root = tree_delete_(readerRequested.root, removed, &success);
         *totalAwaken = *totalAwaken + 1;
-        writerRequested.root = tree_delete_(writerRequested.root, removed);
-      } else {
+        removed->left = NULL;
+        removed->right = NULL;
         readerLocked.root = tree_insert_(readerLocked.root, removed);
-        *totalAwaken = *totalAwaken + 1;
-        readerRequested.root = tree_delete_(readerRequested.root, removed);
+        removed->grab = 1;
+
+        /* start from root again since multiple reader locks allowed */
         tree_awake_(readerRequested.root, degree, type, totalAwaken);
       }
-      removed->left = NULL;
-      removed->right = NULL;
-      removed->grab = 1;
     }
   } else {
     tree_awake_(root->left, degree, type, totalAwaken);
@@ -331,6 +363,8 @@ int64_t set_rotation(int degree) {
 
   /* Should return 0 if writer already grabbed lock */
   result += (int64_t)tree_awake(READER);
+
+  printk("GONGLE: Current Rotation = %d, Awaked %lld nodes\n", currentDegree, result);
 
   mutex_unlock(&rotlock_mutex);
   return result;
@@ -392,11 +426,18 @@ int64_t rotlock_write(int degree, int range) {
   r_low = degree - range;
   r_high = degree + range;
 
-  mutex_lock(&rotlock_mutex);
+  printk("GONGLE: request write lock for range %d to %d\n", r_low, r_high);
   target = node_init(r_low, r_high);
+
+  if (target == NULL) {
+    return -ENOMEM;
+  }
+
+  mutex_lock(&rotlock_mutex);
   if (r_low <= currentDegree && currentDegree <= r_high) {
-    if (!tree_find_(writerLocked.root, r_low, r_high)) {
+    if (!tree_find_(writerLocked.root, r_low, r_high) && !tree_find_(readerLocked.root, r_low, r_high)) {
       /* grab lock directly */
+      printk("GONGLE: grab directly\n");
       target->grab = 1;
       writerLocked.root = tree_insert_(writerLocked.root, target);
       mutex_unlock(&rotlock_mutex);
@@ -404,6 +445,7 @@ int64_t rotlock_write(int degree, int range) {
     }
   }
 
+  printk("GONGLE: add to request\n");
   writerRequested.root = tree_insert_(writerRequested.root, target);
   mutex_unlock(&rotlock_mutex);
   /*
@@ -413,8 +455,63 @@ int64_t rotlock_write(int degree, int range) {
   return 0;
 }
 
-int64_t rotunlock_read(int degree, int range) { return 0; }
-int64_t rotunlock_write(int degree, int range) { return 0; }
+int64_t rotunlock_read(int degree, int range) { 
+  struct lock_node target ;
+  int r_low;
+  int r_high;
+
+  if (degree < 0 || degree >= 360) {
+    return -EINVAL;
+  }
+  if (range <= 0 || range >= 180) {
+    return -EINVAL;
+  }
+
+  r_low = degree - range;
+  r_high = degree + range;
+
+  target.range[0] = r_low;
+  target.range[1] = r_high;
+  target.pid = current->pid;
+
+  mutex_lock(&rotlock_mutex);
+  tree_delete(&target, READER);
+  mutex_unlock(&rotlock_mutex);
+
+  return 0; 
+}
+
+int64_t rotunlock_write(int degree, int range) { 
+  struct lock_node target ;
+  int r_low;
+  int r_high;
+  int deleteResult;
+
+  if (degree < 0 || degree >= 360) {
+    return -EINVAL;
+  }
+  if (range <= 0 || range >= 180) {
+    return -EINVAL;
+  }
+
+  r_low = degree - range;
+  r_high = degree + range;
+
+  target.range[0] = r_low;
+  target.range[1] = r_high;
+  target.pid = current->pid;
+
+  mutex_lock(&rotlock_mutex);
+  deleteResult = tree_delete(&target, WRITER);
+  if (deleteResult) {
+    printk("GOGLE: unlock successed\n");
+  } else {
+    printk("GOGLE: unlock failed :(\n");
+  }
+  mutex_unlock(&rotlock_mutex);
+
+  return 0; 
+}
 
 asmlinkage long sys_set_rotation(int degree) { return set_rotation(degree); }
 

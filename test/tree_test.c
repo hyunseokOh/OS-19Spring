@@ -5,6 +5,7 @@
 #include <time.h>
 
 static pid_t pid = 0;
+static struct lock_tree tree = {.root = NULL};
 
 int check_increasing_order(struct lock_tree *tree);
 void check_increasing_order_(struct lock_node *root,
@@ -12,27 +13,28 @@ void check_increasing_order_(struct lock_node *root,
 
 int main(void) {
   srand(time(NULL));
-  struct lock_tree *tree;
   struct lock_list *list;
+  struct lock_node *target;
   int degree;
   int range;
-  tree = tree_init();
 
-  for (int i = 0; i < 5000; i++) {
+  for (int i = 0; i < 5; i++) {
     degree = rand() % 360;
     range = rand() % 179 + 1;
 
-    tree_insert(tree, pid++, degree, range, READER);
+    target = node_init(pid++, degree - range, degree + range, READER);
+
+    tree.root = tree_insert_(tree.root, target);
   }
 
   /*print_tree(tree);*/
   /*printf("\n\n");*/
-  list = tree_find(tree, 30);
+  list = tree_find(&tree, 30);
   /*print_tree(tree);*/
 
   printf("List Size = %d\n", list_size(list));
 
-  if (check_increasing_order(tree)) {
+  if (check_increasing_order(&tree)) {
     printf("Sorted Test Success\n");
   } else {
     printf("Sorted Test Failed\n");
@@ -40,7 +42,7 @@ int main(void) {
 
   list_print(list);
 
-  tree_delete(tree);
+  /*tree_delete(tree);*/
 }
 
 int check_increasing_order(struct lock_tree *tree) {

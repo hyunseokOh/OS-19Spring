@@ -74,42 +74,6 @@ int node_compare(struct lock_node *self, struct lock_node *other) {
   }
 }
 
-struct lock_node *right_rotate(struct lock_node *node) {
-  struct lock_node *left = node->left;
-  struct lock_node *leftRight = left->right;
-
-  left->right = node;
-  node->left = leftRight;
-
-  node->height = 1 + MAX_HEIGHT(node->left, node->right);
-  left->height = 1 + MAX_HEIGHT(left->left, left->right);
-  return left;
-}
-
-struct lock_node *left_rotate(struct lock_node *node) {
-  struct lock_node *right = node->right;
-  struct lock_node *rightLeft = right->left;
-
-  right->left = node;
-  node->right = rightLeft;
-
-  node->height = 1 + MAX_HEIGHT(node->left, node->right);
-  right->height = 1 + MAX_HEIGHT(right->left, right->right);
-  return right;
-}
-
-struct lock_node *double_right_rotate(struct lock_node *node) {
-  struct lock_node *left = node->left;
-  node->left = left_rotate(left);
-  return right_rotate(node);
-}
-
-struct lock_node *double_left_rotate(struct lock_node *node) {
-  struct lock_node *right = node->right;
-  node->right = right_rotate(right);
-  return left_rotate(node);
-}
-
 /* tree related */
 struct lock_tree *tree_init(void) {
   /*
@@ -187,7 +151,7 @@ struct lock_node *tree_insert_(struct lock_node *root,
     root->left = tree_insert_(root->left, target);
   }
 
-  root->height = 1 + MAX_HEIGHT(root->left, root->right);
+  UPDATE_HEIGHT(root);
   root = node_balance(root);
 
   return root;
@@ -205,10 +169,10 @@ struct lock_node *node_balance(struct lock_node *root) {
     /* left heavy */
     if (height(root->left->right) > height(root->left->left)) {
       /* double rotation */
-      root = double_right_rotate(root);
+      root = DOUBLE_RIGHT_ROTATE(root);
     } else {
       /* single rotation */
-      root = right_rotate(root);
+      root = RIGHT_ROTATE(root);
     }
   }
 
@@ -216,10 +180,10 @@ struct lock_node *node_balance(struct lock_node *root) {
     /* right heavy */
     if (height(root->right->left) > height(root->right->right)) {
       /* double rotation */
-      root = double_left_rotate(root);
+      root = DOUBLE_LEFT_ROTATE(root);
     } else {
       /* single rotation */
-      root = left_rotate(root);
+      root = LEFT_ROTATE(root);
     }
   }
   return root;

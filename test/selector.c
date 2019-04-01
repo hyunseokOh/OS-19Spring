@@ -49,15 +49,18 @@ int main(int argc, char *argv[]) {
 
   while (selectorRun) {
     /* TODO (taebum) require write lock before write into file */
+
+    syscall(SYSCALL_ROTLOCK_WRITE, 90, 90);
     fprintf(fp, "%d\n", num);
     printf("selector: %d\n", num++);
-    /* TODO (taebum) write lock release */
+    syscall(SYSCALL_ROTUNLOCK_WRITE, 90, 90);
     rewind(fp);
+
+    sleep(3);
 
     /* since we do not implemented lock yet,
 * I just implement this code as waiting 2 seconds, and increase num
 * to check whether it writes number into integer file well */
-    sleep(2);
   }
 
   fclose(fp);

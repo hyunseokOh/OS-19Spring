@@ -13,6 +13,42 @@
 #else
 #define DEBUG 0
 #endif
+#define HEIGHT(node) ((node == NULL) ? 0 : node->height)
+#define MAX(node1, node2) \
+  ((HEIGHT(node1) > HEIGHT(node2)) ? HEIGHT(node1) : HEIGHT(node2))
+#define UPDATE_HEIGHT(node) (node->height = 1 + MAX(node->left, node->right))
+#define RIGHT_ROTATE(node)                           \
+  ({                                                 \
+    struct lock_node *left__ = (node->left);         \
+    struct lock_node *leftRight__ = (left__->right); \
+    left__->right = node;                            \
+    node->left = leftRight__;                        \
+    UPDATE_HEIGHT(node);                             \
+    UPDATE_HEIGHT(left__);                           \
+    left__;                                          \
+  })
+#define LEFT_ROTATE(node)                            \
+  ({                                                 \
+    struct lock_node *right__ = (node->right);       \
+    struct lock_node *rightLeft__ = (right__->left); \
+    right__->left = node;                            \
+    node->right = rightLeft__;                       \
+    UPDATE_HEIGHT(node);                             \
+    UPDATE_HEIGHT(right__);                          \
+    right__;                                         \
+  })
+#define DOUBLE_RIGHT_ROTATE(node)          \
+  ({                                       \
+    struct lock_node *left__ = node->left; \
+    node->left = LEFT_ROTATE(left__);      \
+    RIGHT_ROTATE(node);                    \
+  })
+#define DOUBLE_LEFT_ROTATE(node)             \
+  ({                                         \
+    struct lock_node *right__ = node->right; \
+    node->right = RIGHT_ROTATE(right__);     \
+    LEFT_ROTATE(node);                       \
+  })
 
 #include <sys/types.h>
 
@@ -31,10 +67,6 @@ struct lock_node *node_init(pid_t pid, int r_low, int r_high, int node_type);
 void node_delete(struct lock_node *node);
 void print_node(struct lock_node *node);
 int node_compare(struct lock_node *self, struct lock_node *other);
-struct lock_node *right_rotate(struct lock_node *node);
-struct lock_node *left_rotate(struct lock_node *node);
-struct lock_node *double_right_rotate(struct lock_node *node);
-struct lock_node *double_left_rotate(struct lock_node *node);
 struct lock_node *node_balance(struct lock_node *node);
 
 struct lock_tree {
