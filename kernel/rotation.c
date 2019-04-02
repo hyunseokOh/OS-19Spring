@@ -8,6 +8,7 @@
 #include <linux/syscalls.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
+#include <linux/wait.h>
 
 #include <uapi/asm-generic/errno-base.h>
 
@@ -52,6 +53,23 @@ static inline int node_compare(struct lock_node *self,
     } else {
       return self->pid - other->pid;
     }
+  }
+}
+
+static inline void print_node(struct lock_node *data) {
+  if (data == NULL) { return; }
+  printk("Node [%d], low = %d, high = %d, grab = %d\n", data->pid, data->low, data->high, data->grab);
+}
+
+static inline void print_tree(struct rb_root *root){
+  struct lock_node *data = NULL;
+  struct rb_node *node = NULL;
+  node = root->rb_node;
+
+  for (node = rb_first(root); node; node = rb_next(node)) {
+    /* check inorder */
+    data = rb_entry(node, struct lock_node, node);
+    print_node(data);
   }
 }
 
@@ -106,6 +124,10 @@ static inline int tree_insert(struct rb_root *root, struct lock_node *target) {
   }
   rb_link_node(&target->node, parent, new);
   rb_insert_color(&target->node, root);
+
+  printk("\n\nInsertion Success\n");
+  print_tree(root);
+  printk("\n");
   return 1;
 }
 
@@ -139,6 +161,9 @@ static inline int tree_delete(struct rb_root *root, struct lock_node *target) {
   if (data != NULL) {
     rb_erase(&(data->node), root);
     kfree(data);
+    printk("\n\nDeletion Success\n");
+    print_tree(root);
+    printk("\n");
     return 1;
   }
   return 0;
@@ -178,6 +203,7 @@ static inline int grab_locks(int type) {
               intersect_exist(&readerTree, d_low, d_high, 1) == NULL) {
             /* can grab! */
             data->grab = 1;
+            print_node(data);
             totalGrab++;
 
             /* no more writer available in currentDegree*/
@@ -216,18 +242,18 @@ int64_t set_rotation(int degree) {
     /* Should return 0 if writer already grabbed lock */
     result += (int64_t)grab_locks(READER);
   }
-
-  printk("GONGLE: Current Rotation = %d, Awaked %lld nodes\n", currentDegree,
-         result);
-
   mutex_unlock(&rotlock_mutex);
+  if (result > 0) {
+    printk("GONGLE: Current Rotation = %d, Awaked %lld nodes\n", currentDegree,
+         result);
+  }
   return result;
 }
 
 int64_t rotlock_read(int degree, int range) {
   struct lock_node *target = NULL;
-  int r_low;
-  int r_high;
+  int low;
+  int high;
 
   if (degree < 0 || degree >= 360) {
     return -EINVAL;
@@ -236,11 +262,11 @@ int64_t rotlock_read(int degree, int range) {
     return -EINVAL;
   }
 
-  r_low = degree - range;
-  r_high = degree + range;
+  low = degree - range;
+  high = degree + range;
 
   /* lock before access shared data structure */
-  target = node_init(r_low, r_high);
+  target = node_init(low, high);
   if (target == NULL) {
     return -ENOMEM;
   }
@@ -256,8 +282,8 @@ int64_t rotlock_read(int degree, int range) {
 
 int64_t rotlock_write(int degree, int range) {
   struct lock_node *target = NULL;
-  int r_low;
-  int r_high;
+  int low;
+  int high;
 
   if (degree < 0 || degree >= 360) {
     return -EINVAL;
@@ -266,11 +292,11 @@ int64_t rotlock_write(int degree, int range) {
     return -EINVAL;
   }
 
-  r_low = degree - range;
-  r_high = degree + range;
+  low = degree - range;
+  high = degree + range;
 
-  printk("GONGLE: request write lock for range %d to %d\n", r_low, r_high);
-  target = node_init(r_low, r_high);
+  printk("GONGLE: request write lock for range %d to %d\n", low, high);
+  target = node_init(low, high);
 
   if (target == NULL) {
     return -ENOMEM;
@@ -280,6 +306,8 @@ int64_t rotlock_write(int degree, int range) {
   tree_insert(&writerTree, target);
   grab_locks(WRITER);
   mutex_unlock(&rotlock_mutex);
+
+  while(target->grab == 0);
   return 0;
 }
 
