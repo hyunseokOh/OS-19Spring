@@ -12,11 +12,18 @@
 
 #include <uapi/asm-generic/errno-base.h>
 
-DEFINE_MUTEX(rotlock_mutex);  /* for access shared data */
-static int currentDegree = 0; /* current device rotation */
+DEFINE_MUTEX(rot_lock); /* for access shared data */
+int currentDegree = 0;  /* current device rotation */
+struct rb_root writerTree = RB_ROOT;
+struct rb_root readerTree = RB_ROOT;
 
-static struct rb_root writerTree = RB_ROOT;
-static struct rb_root readerTree = RB_ROOT;
+static inline int is_grab(struct lock_node *data) {
+  int result = 0;
+  mutex_lock(&rot_lock);
+  result = data->grab;
+  mutex_unlock(&rot_lock);
+  return result;
+}
 
 static inline struct lock_node *node_init(int r_low, int r_high) {
   /*
@@ -57,11 +64,14 @@ static inline int node_compare(struct lock_node *self,
 }
 
 static inline void print_node(struct lock_node *data) {
-  if (data == NULL) { return; }
-  printk("Node [%d], low = %d, high = %d, grab = %d\n", data->pid, data->low, data->high, data->grab);
+  if (data == NULL) {
+    return;
+  }
+  printk("Node [%d], low = %d, high = %d, grab = %d\n", data->pid, data->low,
+         data->high, data->grab);
 }
 
-static inline void print_tree(struct rb_root *root){
+static inline void print_tree(struct rb_root *root) {
   struct lock_node *data = NULL;
   struct rb_node *node = NULL;
   node = root->rb_node;
@@ -232,7 +242,7 @@ int64_t set_rotation(int degree) {
   result = 0;
 
   /* degree update with lock */
-  mutex_lock(&rotlock_mutex);
+  mutex_lock(&rot_lock);
   currentDegree = degree;
 
   /* First, look writer */
@@ -242,10 +252,10 @@ int64_t set_rotation(int degree) {
     /* Should return 0 if writer already grabbed lock */
     result += (int64_t)grab_locks(READER);
   }
-  mutex_unlock(&rotlock_mutex);
+  mutex_unlock(&rot_lock);
   if (result > 0) {
     printk("GONGLE: Current Rotation = %d, Awaked %lld nodes\n", currentDegree,
-         result);
+           result);
   }
   return result;
 }
@@ -272,10 +282,10 @@ int64_t rotlock_read(int degree, int range) {
   }
 
   /* shared data access */
-  mutex_lock(&rotlock_mutex);
+  mutex_lock(&rot_lock);
   tree_insert(&readerTree, target);
   grab_locks(READER);
-  mutex_unlock(&rotlock_mutex);
+  mutex_unlock(&rot_lock);
 
   return 0;
 }
@@ -302,19 +312,20 @@ int64_t rotlock_write(int degree, int range) {
     return -ENOMEM;
   }
 
-  mutex_lock(&rotlock_mutex);
+  mutex_lock(&rot_lock);
   tree_insert(&writerTree, target);
   grab_locks(WRITER);
-  mutex_unlock(&rotlock_mutex);
+  mutex_unlock(&rot_lock);
 
-  while(target->grab == 0);
+  while (!is_grab(target))
+    ;
   return 0;
 }
 
 int64_t rotunlock_read(int degree, int range) {
   struct lock_node target;
-  int r_low;
-  int r_high;
+  int low;
+  int high;
 
   if (degree < 0 || degree >= 360) {
     return -EINVAL;
@@ -323,24 +334,24 @@ int64_t rotunlock_read(int degree, int range) {
     return -EINVAL;
   }
 
-  r_low = degree - range;
-  r_high = degree + range;
+  low = degree - range;
+  high = degree + range;
 
-  target.low = r_low;
-  target.high = r_high;
+  target.low = low;
+  target.high = high;
   target.pid = current->pid;
 
-  mutex_lock(&rotlock_mutex);
+  mutex_lock(&rot_lock);
   tree_delete(&readerTree, &target);
-  mutex_unlock(&rotlock_mutex);
+  mutex_unlock(&rot_lock);
 
   return 0;
 }
 
 int64_t rotunlock_write(int degree, int range) {
   struct lock_node target;
-  int r_low;
-  int r_high;
+  int low;
+  int high;
   int deleteResult;
 
   if (degree < 0 || degree >= 360) {
@@ -350,21 +361,21 @@ int64_t rotunlock_write(int degree, int range) {
     return -EINVAL;
   }
 
-  r_low = degree - range;
-  r_high = degree + range;
+  low = degree - range;
+  high = degree + range;
 
-  target.low = r_low;
-  target.high = r_high;
+  target.low = low;
+  target.high = high;
   target.pid = current->pid;
 
-  mutex_lock(&rotlock_mutex);
+  mutex_lock(&rot_lock);
   deleteResult = tree_delete(&writerTree, &target);
   if (deleteResult) {
     printk("GONGLE: unlock successed\n");
   } else {
     printk("GONGLE: unlock failed :(\n");
   }
-  mutex_unlock(&rotlock_mutex);
+  mutex_unlock(&rot_lock);
 
   return 0;
 }
