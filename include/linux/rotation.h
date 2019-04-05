@@ -4,6 +4,7 @@
 #include <linux/rbtree.h>
 #include <linux/types.h>
 #include <linux/list.h>
+#include <linux/printk.h>
 
 #define WRITER 0
 #define READER 1
@@ -20,13 +21,64 @@ struct lock_node {
   int high;
   int grab;
 
-  struct rb_node node;
   struct list_head lnode;
 };
 
-struct lock_tree {
-  struct rb_root root;
-  struct list_head head;
-};
+/* some short helpers */
+static inline int in_range(int degree, int low, int high) {
+  int subDegree;
+  if (degree < 180) {
+    /* check for degree + 360 also */
+    subDegree = degree + 360;
+    return (low <= degree && degree <= high) || (low <= subDegree && subDegree <= high);
+  } else if (degree > 180) {
+    /* check for degree - 360 also */
+    subDegree = degree - 360;
+    return (low <= degree && degree <= high) || (low <= subDegree && subDegree <= high);
+  } else {
+    /* exact 180 */
+    return low <= degree && degree <= high;
+  }
+}
+
+static inline int node_compare(struct lock_node *self,
+                               struct lock_node *other) {
+  /*
+   * Compare between 2 lock nodes
+   */
+  if (self->low < other->low) {
+    return -1;
+  } else if (self->low > other->low) {
+    return 1;
+  } else {
+    if (self->high < other->high) {
+      return -1;
+    } else if (self->high > other->high) {
+      return 1;
+    } else {
+      return self->pid - other->pid;
+    }
+  }
+}
+
+static inline void print_node(struct lock_node *data) {
+  /* for debugging */
+  if (data == NULL) {
+    return;
+  }
+  printk("GONGLE: Node [%d], low = %d, high = %d, grab = %d\n", data->pid, data->low,
+         data->high, data->grab);
+}
+
+static inline void print_list(struct list_head *head) {
+  /* for debugging */
+  struct lock_node *data = NULL;
+  struct list_head *traverse = NULL;
+
+  list_for_each(traverse, head) {
+    data = container_of(traverse, struct lock_node, lnode);
+    print_node(data);
+  }
+}
 
 #endif

@@ -16,9 +16,9 @@
 DECLARE_WAIT_QUEUE_HEAD(wait_head); /* wait queue */
 DEFINE_MUTEX(rot_lock); /* for access shared data */
 int currentDegree = 0;  /* current device rotation */
-int fromOutRange = 0;   /* whether to search available grabs from out range */
-struct lock_tree writerTree = {RB_ROOT, LIST_HEAD_INIT(writerTree.head)};
-struct lock_tree readerTree = {RB_ROOT, LIST_HEAD_INIT(readerTree.head)};
+struct list_head writerList = LIST_HEAD_INIT(writerList);
+struct list_head readerList = LIST_HEAD_INIT(readerList);
+
 
 static inline int is_grab(struct lock_node *data) {
   /*
@@ -50,67 +50,38 @@ static inline struct lock_node *node_init(int r_low, int r_high) {
   return node;
 }
 
-static inline int node_compare(struct lock_node *self,
-                               struct lock_node *other) {
-  /*
-   * Compare between 2 lock nodes
-   */
-  if (self->low < other->low) {
-    return -1;
-  } else if (self->low > other->low) {
-    return 1;
-  } else {
-    if (self->high < other->high) {
-      return -1;
-    } else if (self->high > other->high) {
-      return 1;
-    } else {
-      return self->pid - other->pid;
+static inline struct lock_node *is_intersect(struct list_head *from, struct list_head *head,
+                                            int low, int high, int grabCheck) {
+  /* check intersection from starting point (not used currently) */
+  struct lock_node *data;
+  int d_low;
+  int d_high;
+  
+  for (from = (from)->next; from != (head); from = from->next) {
+    data = container_of(from, struct lock_node, lnode);
+    d_low = data->low;
+    d_high = data->high;
+    if (low <= d_high && high >= d_low) {
+      /* inter section found */
+      if (grabCheck) {
+        if (data->grab) {
+          return data;
+        }
+      } else {
+        return data;
+      }
     }
   }
+  return NULL;
+
 }
 
-static inline void print_node(struct lock_node *data) {
-  /* for debugging */
-  if (data == NULL) {
-    return;
-  }
-  printk("GONGLE: Node [%d], low = %d, high = %d, grab = %d\n", data->pid, data->low,
-         data->high, data->grab);
-}
-
-static inline void print_tree(struct rb_root *root) {
-  /* for debugging */
-  struct lock_node *data = NULL;
-  struct rb_node *node = NULL;
-  node = root->rb_node;
-
-  for (node = rb_first(root); node; node = rb_next(node)) {
-    data = rb_entry(node, struct lock_node, node);
-    print_node(data);
-  }
-}
-
-static inline void print_list(struct list_head *head) {
-  /* for debugging */
-  struct lock_node *data = NULL;
-  struct list_head *traverse = NULL;
-
-  list_for_each(traverse, head) {
-    data = container_of(traverse, struct lock_node, lnode);
-    print_node(data);
-  }
-}
-
-static inline struct lock_node *intersect_exist(struct lock_tree *tree, int low,
+static inline struct lock_node *intersect_exist(struct list_head *head, int low,
                                                 int high, int grabCheck) {
   struct lock_node *data = NULL;
-  struct list_head *head;
   struct list_head *traverse;
   int d_low;
   int d_high;
-
-  head = &(tree->head);
 
   list_for_each(traverse, head) {
     data = container_of(traverse, struct lock_node, lnode);
@@ -130,85 +101,25 @@ static inline struct lock_node *intersect_exist(struct lock_tree *tree, int low,
   return NULL;
 }
 
-static inline int tree_insert(struct lock_tree *tree, struct lock_node *target) {
-  struct rb_root *root = &(tree->root);
-  struct rb_node **new = &(root->rb_node);
-  struct rb_node *parent = NULL;
-  struct lock_node *this;
-  struct list_head *head = &(tree->head);
-  int compare;
-
-  while (*new) {
-    this = container_of(*new, struct lock_node, node);
-    compare = node_compare(target, this);
-
-    parent = *new;
-    if (compare < 0) {
-      /* target is smaller */
-      new = &((*new)->rb_left);
-    } else if (compare > 0) {
-      new = &((*new)->rb_right);
-    } else {
-      /* insert failed */
-      return 0;
-    }
-  }
-
-  /* make balance */
-  rb_link_node(&(target->node), parent, new);
-  rb_insert_color(&(target->node), root);
-
-  /* add to tail */
-  list_add_tail(&(target->lnode), head);
-
-  return 1;
-}
-
-static inline struct lock_node *tree_search(struct rb_root *root,
-                                            struct lock_node *target) {
-  /* search for exact match */
-  struct rb_node *node;
+static inline int list_delete(struct list_head *head, struct lock_node *target) {
   struct lock_node *data;
+  struct list_head *traverse;
   int compare;
-
-  node = root->rb_node;
-
-  while (node) {
-    data = container_of(node, struct lock_node, node);
-    compare = node_compare(target, data);
-    if (compare < 0) {
-      /* target < data */
-      node = node->rb_left;
-    } else if (compare > 0) {
-      /* target > data */
-      node = node->rb_right;
-    } else {
-      return data;
+  list_for_each(traverse, head) {
+    data = container_of(traverse, struct lock_node, lnode);
+    compare = node_compare(data, target);
+    if (compare == 0) {
+      /* match */
+      list_del(&data->lnode);
+      kfree(data);
+      return 1;
     }
-  }
-  return NULL;
-}
-
-static inline int tree_delete(struct lock_tree *tree, struct lock_node *target) {
-  struct rb_root *root = &tree->root;
-  struct lock_node *data = tree_search(root, target);
-  if (data != NULL) {
-    /* remove from tree */
-    rb_erase(&(data->node), root);
-
-    /* remove from list */
-    list_del(&(data->lnode));
-
-    /* kfree */
-    kfree(data);
-    return 1;
   }
   return 0;
 }
 
-static inline int grab_locks(int type, int degree) {
+static inline int grab_locks(int type) {
   struct lock_node *data;
-  struct lock_tree *tree;
   struct list_head *head;
   struct list_head *traverse;
   int totalGrab = 0;
@@ -216,18 +127,16 @@ static inline int grab_locks(int type, int degree) {
   int d_high;
 
   if (type == WRITER) {
-    tree = &writerTree;
+    head = &writerList;
   } else {
-    tree = &readerTree;
+    head = &readerList;
   }
-
-  head = &(tree->head);
 
   list_for_each(traverse, head) {
     data = container_of(traverse, struct lock_node, lnode);
     d_low = data->low;
     d_high = data->high;
-    if (d_low <= currentDegree && currentDegree <= d_high) {
+    if (in_range(currentDegree, d_low, d_high)) {
       /* possible candidate */
       if (!data->grab) {
         if (type == WRITER) {
@@ -236,8 +145,8 @@ static inline int grab_locks(int type, int degree) {
            *  1. No writer grabs lock intersected range currently
            *  2. No reader grabs lock intersected range currently
            */
-          if (intersect_exist(&writerTree, d_low, d_high, 1) == NULL &&
-              intersect_exist(&readerTree, d_low, d_high, 1) == NULL) {
+          if (intersect_exist(&writerList, d_low, d_high, 1) == NULL &&
+              intersect_exist(&readerList, d_low, d_high, 1) == NULL) {
             /* can grab! */
             data->grab = 1;
             totalGrab++;
@@ -251,7 +160,7 @@ static inline int grab_locks(int type, int degree) {
            *  1. No writer grabs lock intersected range currently
            *  2. No writer waits lock intersected range currently
            */
-          if (intersect_exist(&writerTree, d_low, d_high, 0) == NULL) {
+          if (intersect_exist(&writerList, d_low, d_high, 0) == NULL) {
             /* can grab! */
             data->grab = 1;
             totalGrab++;
@@ -260,55 +169,25 @@ static inline int grab_locks(int type, int degree) {
       }
     }
   }
-
   return totalGrab;
-}
-
-static inline int64_t grab_locks_wrapper(int type) {
-  int64_t result = 0;
-  if (fromOutRange) {
-    if (currentDegree > 180) {
-      result += (int64_t)grab_locks(type, currentDegree - 360);
-    } else if (currentDegree < 180) {
-      result += (int64_t)grab_locks(type, currentDegree + 360);
-    }
-
-    result += (int64_t)grab_locks(type, currentDegree);
-  } else {
-    result += (int64_t)grab_locks(type, currentDegree);
-
-    if (currentDegree > 180) {
-      result += (int64_t)grab_locks(type, currentDegree - 360);
-    } else if (currentDegree < 180) {
-      result += (int64_t)grab_locks(type, currentDegree + 360);
-    }
-  }
-  return result;
 }
 
 int64_t set_rotation(int degree) {
   int64_t result;
   result = 0;
 
-  /* degree update with lock */
   mutex_lock(&rot_lock);
+
+  /* degree update with lock */
   currentDegree = degree;
 
   /* First, look writer */
-  result += grab_locks_wrapper(WRITER);
-  if (result == 0) {
-    /* no writer grabbed */
-    result += grab_locks_wrapper(READER);
-  }
-  fromOutRange = (fromOutRange + 1) % 2;
+  result += grab_locks(WRITER);
+  
+  /* Next, look reader */
+  result += grab_locks(READER);
 
   mutex_unlock(&rot_lock);
-  /*
-  if (result > 0) {
-    printk("GONGLE: Current Rotation = %d, Awaked %lld nodes\n", currentDegree,
-           result);
-  }
-  */
 
   wake_up(&wait_head); /* wake up others */
   return result;
@@ -337,8 +216,10 @@ int64_t rotlock_read(int degree, int range) {
 
   /* shared data access */
   mutex_lock(&rot_lock);
-  tree_insert(&readerTree, target);
-  grab_locks_wrapper(READER);
+  list_add_tail(&target->lnode, &readerList);
+  if (in_range(currentDegree, low, high)) {
+    grab_locks(READER);
+  }
   mutex_unlock(&rot_lock);
 
   DEFINE_WAIT(wait);
@@ -377,8 +258,10 @@ int64_t rotlock_write(int degree, int range) {
   }
 
   mutex_lock(&rot_lock);
-  tree_insert(&writerTree, target);
-  grab_locks_wrapper(WRITER);
+  list_add_tail(&target->lnode, &writerList);
+  if (in_range(currentDegree, low, high)) {
+    grab_locks(WRITER);
+  }
   mutex_unlock(&rot_lock);
 
   DEFINE_WAIT(wait);
@@ -414,7 +297,7 @@ int64_t rotunlock_read(int degree, int range) {
   target.pid = current->pid;
 
   mutex_lock(&rot_lock);
-  tree_delete(&readerTree, &target);
+  list_delete(&readerList, &target);
   mutex_unlock(&rot_lock);
   wake_up(&wait_head);
 
@@ -442,10 +325,9 @@ int64_t rotunlock_write(int degree, int range) {
   target.pid = current->pid;
 
   mutex_lock(&rot_lock);
-  deleteResult = tree_delete(&writerTree, &target);
+  deleteResult = list_delete(&writerList, &target);
   mutex_unlock(&rot_lock);
   wake_up(&wait_head);
-
 
   return 0;
 }
