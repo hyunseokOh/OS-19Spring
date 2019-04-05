@@ -1,24 +1,21 @@
 #include <linux/linkage.h>
+#include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/printk.h>
-#include <linux/rbtree.h>
 #include <linux/rotation.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/syscalls.h>
 #include <linux/types.h>
-#include <linux/uaccess.h>
 #include <linux/wait.h>
-#include <linux/list.h>
 
 #include <uapi/asm-generic/errno-base.h>
 
 DECLARE_WAIT_QUEUE_HEAD(wait_head); /* wait queue */
-DEFINE_MUTEX(rot_lock); /* for access shared data */
-int currentDegree = 0;  /* current device rotation */
+DEFINE_MUTEX(rot_lock);             /* for access shared data */
+int currentDegree = 0;              /* current device rotation */
 struct list_head writerList = LIST_HEAD_INIT(writerList);
 struct list_head readerList = LIST_HEAD_INIT(readerList);
-
 
 static inline int is_grab(struct lock_node *data) {
   /*
@@ -67,13 +64,14 @@ static inline struct lock_node *node_init(int r_low, int r_high) {
   return node;
 }
 
-static inline struct lock_node *is_intersect(struct list_head *from, struct list_head *head,
-                                            int low, int high, int grabCheck) {
+static inline struct lock_node *is_intersect(struct list_head *from,
+                                             struct list_head *head, int low,
+                                             int high, int grabCheck) {
   /* check intersection from starting point (not used currently) */
   struct lock_node *data;
   int d_low;
   int d_high;
-  
+
   for (from = (from)->next; from != (head); from = from->next) {
     data = container_of(from, struct lock_node, lnode);
     d_low = data->low;
@@ -90,7 +88,6 @@ static inline struct lock_node *is_intersect(struct list_head *from, struct list
     }
   }
   return NULL;
-
 }
 
 static inline struct lock_node *intersect_exist(struct list_head *head, int low,
@@ -118,7 +115,8 @@ static inline struct lock_node *intersect_exist(struct list_head *head, int low,
   return NULL;
 }
 
-static inline int list_delete(struct list_head *head, struct lock_node *target) {
+static inline int list_delete(struct list_head *head,
+                              struct lock_node *target) {
   struct lock_node *data;
   struct list_head *traverse;
   int compare;
@@ -200,7 +198,7 @@ int64_t set_rotation(int degree) {
 
   /* First, look writer */
   result += grab_locks(WRITER);
-  
+
   /* Next, look reader */
   result += grab_locks(READER);
 
@@ -245,8 +243,10 @@ int64_t rotlock_read(int degree, int range) {
     prepare_to_wait(&wait_head, &wait, TASK_INTERRUPTIBLE);
     if (signal_pending(current)) {
       printk("GONGLE: exit process\n");
+      mutex_lock(&rot_lock);
       do_exit_rotlock(&writerList, target->pid);
       do_exit_rotlock(&readerList, target->pid);
+      mutex_unlock(&rot_lock);
       finish_wait(&wait_head, &wait);
       return 0;
     }
@@ -291,8 +291,10 @@ int64_t rotlock_write(int degree, int range) {
     prepare_to_wait(&wait_head, &wait, TASK_INTERRUPTIBLE);
     if (signal_pending(current)) {
       printk("GONGLE: exit process\n");
+      mutex_lock(&rot_lock);
       do_exit_rotlock(&writerList, target->pid);
       do_exit_rotlock(&readerList, target->pid);
+      mutex_unlock(&rot_lock);
       finish_wait(&wait_head, &wait);
       return 0;
     }

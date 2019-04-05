@@ -1,10 +1,9 @@
 #ifndef _LINUX_ROTATION_H
 #define _LINUX_ROTATION_H
 
-#include <linux/rbtree.h>
-#include <linux/types.h>
 #include <linux/list.h>
 #include <linux/printk.h>
+#include <linux/types.h>
 
 #define WRITER 0
 #define READER 1
@@ -30,11 +29,13 @@ static inline int in_range(int degree, int low, int high) {
   if (degree < 180) {
     /* check for degree + 360 also */
     subDegree = degree + 360;
-    return (low <= degree && degree <= high) || (low <= subDegree && subDegree <= high);
+    return (low <= degree && degree <= high) ||
+           (low <= subDegree && subDegree <= high);
   } else if (degree > 180) {
     /* check for degree - 360 also */
     subDegree = degree - 360;
-    return (low <= degree && degree <= high) || (low <= subDegree && subDegree <= high);
+    return (low <= degree && degree <= high) ||
+           (low <= subDegree && subDegree <= high);
   } else {
     /* exact 180 */
     return low <= degree && degree <= high;
@@ -66,8 +67,8 @@ static inline void print_node(struct lock_node *data) {
   if (data == NULL) {
     return;
   }
-  printk("GONGLE: Node [%d], low = %d, high = %d, grab = %d\n", data->pid, data->low,
-         data->high, data->grab);
+  printk("GONGLE: Node [%d], low = %d, high = %d, grab = %d\n", data->pid,
+         data->low, data->high, data->grab);
 }
 
 static inline void print_list(struct list_head *head) {
