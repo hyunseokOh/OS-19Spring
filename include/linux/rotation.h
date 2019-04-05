@@ -3,6 +3,7 @@
 
 #include <linux/rbtree.h>
 #include <linux/types.h>
+#include <linux/list.h>
 
 #define WRITER 0
 #define READER 1
@@ -20,6 +21,12 @@ struct lock_node {
   int grab;
 
   struct rb_node node;
+  struct list_head lnode;
+};
+
+struct lock_tree {
+  struct rb_root root;
+  struct list_head head;
 };
 
 #endif

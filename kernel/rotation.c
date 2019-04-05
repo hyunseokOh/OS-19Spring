@@ -9,15 +9,21 @@
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include <linux/wait.h>
+#include <linux/list.h>
 
 #include <uapi/asm-generic/errno-base.h>
 
+DECLARE_WAIT_QUEUE_HEAD(wait_head); /* wait queue */
 DEFINE_MUTEX(rot_lock); /* for access shared data */
 int currentDegree = 0;  /* current device rotation */
-struct rb_root writerTree = RB_ROOT;
-struct rb_root readerTree = RB_ROOT;
+int fromOutRange = 0;   /* whether to search available grabs from out range */
+struct lock_tree writerTree = {RB_ROOT, LIST_HEAD_INIT(writerTree.head)};
+struct lock_tree readerTree = {RB_ROOT, LIST_HEAD_INIT(readerTree.head)};
 
 static inline int is_grab(struct lock_node *data) {
+  /*
+   * Safe checking for whether grabbed
+   */
   int result = 0;
   mutex_lock(&rot_lock);
   result = data->grab;
@@ -39,6 +45,7 @@ static inline struct lock_node *node_init(int r_low, int r_high) {
   node->low = r_low;
   node->high = r_high;
   node->grab = 0;
+  INIT_LIST_HEAD(&node->lnode);
 
   return node;
 }
@@ -64,37 +71,49 @@ static inline int node_compare(struct lock_node *self,
 }
 
 static inline void print_node(struct lock_node *data) {
+  /* for debugging */
   if (data == NULL) {
     return;
   }
-  printk("Node [%d], low = %d, high = %d, grab = %d\n", data->pid, data->low,
+  printk("GONGLE: Node [%d], low = %d, high = %d, grab = %d\n", data->pid, data->low,
          data->high, data->grab);
 }
 
 static inline void print_tree(struct rb_root *root) {
+  /* for debugging */
   struct lock_node *data = NULL;
   struct rb_node *node = NULL;
   node = root->rb_node;
 
   for (node = rb_first(root); node; node = rb_next(node)) {
-    /* check inorder */
     data = rb_entry(node, struct lock_node, node);
     print_node(data);
   }
 }
 
-static inline struct lock_node *intersect_exist(struct rb_root *root, int low,
+static inline void print_list(struct list_head *head) {
+  /* for debugging */
+  struct lock_node *data = NULL;
+  struct list_head *traverse = NULL;
+
+  list_for_each(traverse, head) {
+    data = container_of(traverse, struct lock_node, lnode);
+    print_node(data);
+  }
+}
+
+static inline struct lock_node *intersect_exist(struct lock_tree *tree, int low,
                                                 int high, int grabCheck) {
   struct lock_node *data = NULL;
-  struct rb_node *node = NULL;
+  struct list_head *head;
+  struct list_head *traverse;
   int d_low;
   int d_high;
 
-  node = root->rb_node;
+  head = &(tree->head);
 
-  for (node = rb_first(root); node; node = rb_next(node)) {
-    /* check inorder */
-    data = rb_entry(node, struct lock_node, node);
+  list_for_each(traverse, head) {
+    data = container_of(traverse, struct lock_node, lnode);
     d_low = data->low;
     d_high = data->high;
     if (low <= d_high && high >= d_low) {
@@ -111,10 +130,12 @@ static inline struct lock_node *intersect_exist(struct rb_root *root, int low,
   return NULL;
 }
 
-static inline int tree_insert(struct rb_root *root, struct lock_node *target) {
+static inline int tree_insert(struct lock_tree *tree, struct lock_node *target) {
+  struct rb_root *root = &(tree->root);
   struct rb_node **new = &(root->rb_node);
   struct rb_node *parent = NULL;
   struct lock_node *this;
+  struct list_head *head = &(tree->head);
   int compare;
 
   while (*new) {
@@ -132,12 +153,14 @@ static inline int tree_insert(struct rb_root *root, struct lock_node *target) {
       return 0;
     }
   }
-  rb_link_node(&target->node, parent, new);
-  rb_insert_color(&target->node, root);
 
-  printk("\n\nInsertion Success\n");
-  print_tree(root);
-  printk("\n");
+  /* make balance */
+  rb_link_node(&(target->node), parent, new);
+  rb_insert_color(&(target->node), root);
+
+  /* add to tail */
+  list_add_tail(&(target->lnode), head);
+
   return 1;
 }
 
@@ -166,38 +189,42 @@ static inline struct lock_node *tree_search(struct rb_root *root,
   return NULL;
 }
 
-static inline int tree_delete(struct rb_root *root, struct lock_node *target) {
+static inline int tree_delete(struct lock_tree *tree, struct lock_node *target) {
+  struct rb_root *root = &tree->root;
   struct lock_node *data = tree_search(root, target);
   if (data != NULL) {
+    /* remove from tree */
     rb_erase(&(data->node), root);
+
+    /* remove from list */
+    list_del(&(data->lnode));
+
+    /* kfree */
     kfree(data);
-    printk("\n\nDeletion Success\n");
-    print_tree(root);
-    printk("\n");
     return 1;
   }
   return 0;
 }
 
-static inline int grab_locks(int type) {
-  struct rb_node *node;
-  struct rb_root *root;
+static inline int grab_locks(int type, int degree) {
   struct lock_node *data;
+  struct lock_tree *tree;
+  struct list_head *head;
+  struct list_head *traverse;
   int totalGrab = 0;
   int d_low;
   int d_high;
 
   if (type == WRITER) {
-    root = &writerTree;
+    tree = &writerTree;
   } else {
-    root = &readerTree;
+    tree = &readerTree;
   }
 
-  node = root->rb_node;
+  head = &(tree->head);
 
-  for (node = rb_first(root); node; node = rb_next(node)) {
-    /* check inorder */
-    data = rb_entry(node, struct lock_node, node);
+  list_for_each(traverse, head) {
+    data = container_of(traverse, struct lock_node, lnode);
     d_low = data->low;
     d_high = data->high;
     if (d_low <= currentDegree && currentDegree <= d_high) {
@@ -213,7 +240,6 @@ static inline int grab_locks(int type) {
               intersect_exist(&readerTree, d_low, d_high, 1) == NULL) {
             /* can grab! */
             data->grab = 1;
-            print_node(data);
             totalGrab++;
 
             /* no more writer available in currentDegree*/
@@ -234,7 +260,30 @@ static inline int grab_locks(int type) {
       }
     }
   }
+
   return totalGrab;
+}
+
+static inline int64_t grab_locks_wrapper(int type) {
+  int64_t result = 0;
+  if (fromOutRange) {
+    if (currentDegree > 180) {
+      result += (int64_t)grab_locks(type, currentDegree - 360);
+    } else if (currentDegree < 180) {
+      result += (int64_t)grab_locks(type, currentDegree + 360);
+    }
+
+    result += (int64_t)grab_locks(type, currentDegree);
+  } else {
+    result += (int64_t)grab_locks(type, currentDegree);
+
+    if (currentDegree > 180) {
+      result += (int64_t)grab_locks(type, currentDegree - 360);
+    } else if (currentDegree < 180) {
+      result += (int64_t)grab_locks(type, currentDegree + 360);
+    }
+  }
+  return result;
 }
 
 int64_t set_rotation(int degree) {
@@ -246,17 +295,22 @@ int64_t set_rotation(int degree) {
   currentDegree = degree;
 
   /* First, look writer */
-  result += (int64_t)grab_locks(WRITER);
-
+  result += grab_locks_wrapper(WRITER);
   if (result == 0) {
-    /* Should return 0 if writer already grabbed lock */
-    result += (int64_t)grab_locks(READER);
+    /* no writer grabbed */
+    result += grab_locks_wrapper(READER);
   }
+  fromOutRange = (fromOutRange + 1) % 2;
+
   mutex_unlock(&rot_lock);
+  /*
   if (result > 0) {
     printk("GONGLE: Current Rotation = %d, Awaked %lld nodes\n", currentDegree,
            result);
   }
+  */
+
+  wake_up(&wait_head); /* wake up others */
   return result;
 }
 
@@ -284,8 +338,19 @@ int64_t rotlock_read(int degree, int range) {
   /* shared data access */
   mutex_lock(&rot_lock);
   tree_insert(&readerTree, target);
-  grab_locks(READER);
+  grab_locks_wrapper(READER);
   mutex_unlock(&rot_lock);
+
+  DEFINE_WAIT(wait);
+  add_wait_queue(&wait_head, &wait);
+  while (!is_grab(target)) {
+    prepare_to_wait(&wait_head, &wait, TASK_INTERRUPTIBLE);
+    if (signal_pending(current)) {
+      break;
+    }
+    schedule();
+  }
+  finish_wait(&wait_head, &wait);
 
   return 0;
 }
@@ -305,7 +370,6 @@ int64_t rotlock_write(int degree, int range) {
   low = degree - range;
   high = degree + range;
 
-  printk("GONGLE: request write lock for range %d to %d\n", low, high);
   target = node_init(low, high);
 
   if (target == NULL) {
@@ -314,11 +378,19 @@ int64_t rotlock_write(int degree, int range) {
 
   mutex_lock(&rot_lock);
   tree_insert(&writerTree, target);
-  grab_locks(WRITER);
+  grab_locks_wrapper(WRITER);
   mutex_unlock(&rot_lock);
 
-  while (!is_grab(target))
-    ;
+  DEFINE_WAIT(wait);
+  add_wait_queue(&wait_head, &wait);
+  while (!is_grab(target)) {
+    prepare_to_wait(&wait_head, &wait, TASK_INTERRUPTIBLE);
+    if (signal_pending(current)) {
+      break;
+    }
+    schedule();
+  }
+  finish_wait(&wait_head, &wait);
   return 0;
 }
 
@@ -344,6 +416,7 @@ int64_t rotunlock_read(int degree, int range) {
   mutex_lock(&rot_lock);
   tree_delete(&readerTree, &target);
   mutex_unlock(&rot_lock);
+  wake_up(&wait_head);
 
   return 0;
 }
@@ -370,12 +443,9 @@ int64_t rotunlock_write(int degree, int range) {
 
   mutex_lock(&rot_lock);
   deleteResult = tree_delete(&writerTree, &target);
-  if (deleteResult) {
-    printk("GONGLE: unlock successed\n");
-  } else {
-    printk("GONGLE: unlock failed :(\n");
-  }
   mutex_unlock(&rot_lock);
+  wake_up(&wait_head);
+
 
   return 0;
 }
