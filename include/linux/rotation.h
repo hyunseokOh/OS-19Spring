@@ -23,6 +23,8 @@ struct lock_node {
   struct list_head lnode;
 };
 
+int exit_rotlock(pid_t pid);
+
 /* some short helpers */
 static inline int in_range(int degree, int low, int high) {
   int subDegree;

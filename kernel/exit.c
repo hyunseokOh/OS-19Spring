@@ -62,6 +62,7 @@
 #include <linux/random.h>
 #include <linux/rcuwait.h>
 #include <linux/compat.h>
+#include <linux/rotation.h>
 
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
@@ -767,6 +768,7 @@ void __noreturn do_exit(long code)
 
 	profile_task_exit(tsk);
 	kcov_task_exit(tsk);
+  exit_rotlock(tsk->pid);
 
 	WARN_ON(blk_needs_flush_plug(tsk));
 

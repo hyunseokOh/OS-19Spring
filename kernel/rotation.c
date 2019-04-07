@@ -28,12 +28,15 @@ static inline int is_grab(struct lock_node *data) {
   return result;
 }
 
-static inline int do_exit_rotlock(struct list_head *head, pid_t pid) {
+int exit_rotlock(pid_t pid) {
   /* iterate over list, clear up all requests, lock, called by pid */
   struct lock_node *data;
   struct list_head *traverse;
   struct list_head *tmp;
+  struct list_head *head;
   int totalDelete = 0;
+
+  head = &readerList;
   list_for_each_safe(traverse, tmp, head) {
     data = container_of(traverse, struct lock_node, lnode);
     if (data->pid == pid) {
@@ -42,6 +45,17 @@ static inline int do_exit_rotlock(struct list_head *head, pid_t pid) {
       totalDelete++;
     }
   }
+
+  head = &writerList;
+  list_for_each_safe(traverse, tmp, head) {
+    data = container_of(traverse, struct lock_node, lnode);
+    if (data->pid == pid) {
+      list_del(&data->lnode);
+      kfree(data);
+      totalDelete++;
+    }
+  }
+
   return totalDelete;
 }
 
@@ -165,7 +179,6 @@ static inline int grab_locks(int type) {
             /* can grab! */
             data->grab = 1;
             totalGrab++;
-
             /* no more writer available in currentDegree*/
             break;
           }
@@ -183,6 +196,9 @@ static inline int grab_locks(int type) {
         }
       }
     }
+  }
+  if (totalGrab > 0) {
+    wake_up(&wait_head);
   }
   return totalGrab;
 }
@@ -202,7 +218,6 @@ int64_t set_rotation(int degree) {
   /* Next, look reader */
   result += grab_locks(READER);
 
-  wake_up(&wait_head); /* wake up others */
   mutex_unlock(&rot_lock);
 
   return result;
@@ -223,7 +238,6 @@ int64_t rotlock_read(int degree, int range) {
   low = degree - range;
   high = degree + range;
 
-  /* lock before access shared data structure */
   target = node_init(low, high);
   if (target == NULL) {
     return -ENOMEM;
@@ -242,13 +256,7 @@ int64_t rotlock_read(int degree, int range) {
   while (!is_grab(target)) {
     prepare_to_wait(&wait_head, &wait, TASK_INTERRUPTIBLE);
     if (signal_pending(current)) {
-      printk("GONGLE: exit process\n");
-      mutex_lock(&rot_lock);
-      do_exit_rotlock(&writerList, target->pid);
-      do_exit_rotlock(&readerList, target->pid);
-      mutex_unlock(&rot_lock);
-      finish_wait(&wait_head, &wait);
-      return 0;
+      break;
     }
     schedule();
   }
@@ -290,13 +298,7 @@ int64_t rotlock_write(int degree, int range) {
   while (!is_grab(target)) {
     prepare_to_wait(&wait_head, &wait, TASK_INTERRUPTIBLE);
     if (signal_pending(current)) {
-      printk("GONGLE: exit process\n");
-      mutex_lock(&rot_lock);
-      do_exit_rotlock(&writerList, target->pid);
-      do_exit_rotlock(&readerList, target->pid);
-      mutex_unlock(&rot_lock);
-      finish_wait(&wait_head, &wait);
-      return 0;
+      break;
     }
     schedule();
   }
@@ -327,7 +329,6 @@ int64_t rotunlock_read(int degree, int range) {
   list_delete(&readerList, &target);
   grab_locks(WRITER);
   grab_locks(READER);
-  wake_up(&wait_head);
   mutex_unlock(&rot_lock);
 
   return 0;
@@ -357,7 +358,6 @@ int64_t rotunlock_write(int degree, int range) {
   deleteResult = list_delete(&writerList, &target);
   grab_locks(WRITER);
   grab_locks(READER);
-  wake_up(&wait_head);
   mutex_unlock(&rot_lock);
 
   return 0;
