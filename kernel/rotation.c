@@ -78,32 +78,6 @@ static inline struct lock_node *node_init(int r_low, int r_high) {
   return node;
 }
 
-static inline struct lock_node *intersection(struct list_head *from,
-                                             struct list_head *head, int low,
-                                             int high, int grabCheck) {
-  /* check intersection from starting point (not used currently) */
-  struct lock_node *data;
-  int d_low;
-  int d_high;
-
-  for (from = (from)->next; from != (head); from = from->next) {
-    data = container_of(from, struct lock_node, lnode);
-    d_low = data->low;
-    d_high = data->high;
-    if (low <= d_high && high >= d_low) {
-      /* inter section found */
-      if (grabCheck) {
-        if (data->grab) {
-          return data;
-        }
-      } else {
-        return data;
-      }
-    }
-  }
-  return NULL;
-}
-
 static inline struct lock_node *intersect_exist(struct list_head *head, int low,
                                                 int high, int grabCheck) {
   struct lock_node *data = NULL;
@@ -133,8 +107,9 @@ static inline int list_delete(struct list_head *head,
                               struct lock_node *target) {
   struct lock_node *data;
   struct list_head *traverse;
+  struct list_head *tmp;
   int compare;
-  list_for_each(traverse, head) {
+  list_for_each_safe(traverse, tmp, head) {
     data = container_of(traverse, struct lock_node, lnode);
     compare = node_compare(data, target);
     if (compare == 0) {

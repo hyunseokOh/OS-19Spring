@@ -95,6 +95,7 @@ static inline void print_list(struct list_head *head) {
     data = container_of(traverse, struct lock_node, lnode);
     print_node(data);
   }
+  printk("\n");
 }
 
 #endif
