@@ -44,6 +44,19 @@ static inline int in_range(int degree, int low, int high) {
   }
 }
 
+static inline int is_intersect(int low1, int high1, int low2, int high2) {
+  /* compare with all possible ranges */
+  int result = 0;
+  result = low1 <= high2 && high1 >= low2;
+  if (result == 0) {
+    result = low1 - 360 <= high2 && high1 - 360 >= low2;
+    if (result == 0) {
+      result = low1 + 360 <= high2 && high1 + 360 >= low2;
+    }
+  }
+  return result;
+}
+
 static inline int node_compare(struct lock_node *self,
                                struct lock_node *other) {
   /*

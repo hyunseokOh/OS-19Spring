@@ -78,7 +78,7 @@ static inline struct lock_node *node_init(int r_low, int r_high) {
   return node;
 }
 
-static inline struct lock_node *is_intersect(struct list_head *from,
+static inline struct lock_node *intersection(struct list_head *from,
                                              struct list_head *head, int low,
                                              int high, int grabCheck) {
   /* check intersection from starting point (not used currently) */
@@ -115,8 +115,8 @@ static inline struct lock_node *intersect_exist(struct list_head *head, int low,
     data = container_of(traverse, struct lock_node, lnode);
     d_low = data->low;
     d_high = data->high;
-    if (low <= d_high && high >= d_low) {
-      /* inter section found */
+    if (is_intersect(low, high, d_low, d_high)) {
+      /* intersection found */
       if (grabCheck) {
         if (data->grab) {
           return data;
