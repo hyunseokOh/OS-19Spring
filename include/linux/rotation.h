@@ -4,6 +4,7 @@
 #include <linux/list.h>
 #include <linux/printk.h>
 #include <linux/types.h>
+#include <linux/sched.h>
 
 #define WRITER 0
 #define READER 1
@@ -19,6 +20,7 @@ struct lock_node {
   int low;
   int high;
   int grab;
+  struct task_struct *task;
 
   struct list_head lnode;
 };
