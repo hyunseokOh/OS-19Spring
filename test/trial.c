@@ -23,7 +23,7 @@ void factorization(int target, int id) {
 
   /* edge cases */
   if (target == 0 || target == 1 || target == -1) {
-    printf("trial-%d: %d = %d", id, target, target);
+    printf("trial-%d: %d = %d\n", id, target, target);
   }
 
   if (target < 0) {
@@ -87,12 +87,13 @@ int main(int argc, char *argv[]) {
 
   while (trialRun) {
     /* TODO (taebum) require read lock before read */
+    syscall(SYSCALL_ROTLOCK_READ, 90, 90);
     fscanf(fp, "%d\n", &target);
     factorization(target, id);
     /* TODO (taebum) read lock release */
+    syscall(SYSCALL_ROTUNLOCK_READ, 90, 90);
     rewind(fp);
 
-    sleep(2);
   }
 
   fclose(fp);
