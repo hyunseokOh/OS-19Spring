@@ -234,16 +234,12 @@ int64_t rotlock_read(int degree, int range) {
   }
   mutex_unlock(&rot_lock);
 
-  DEFINE_WAIT(wait);
-  add_wait_queue(&wait_head, &wait);
+  set_current_state(TASK_INTERRUPTIBLE);
   while (!is_grab(target)) {
-    prepare_to_wait(&wait_head, &wait, TASK_INTERRUPTIBLE);
-    if (signal_pending(current)) {
-      break;
-    }
     schedule();
+    set_current_state(TASK_INTERRUPTIBLE);
   }
-  finish_wait(&wait_head, &wait);
+  __set_current_state(TASK_RUNNING);
 
   return 0;
 }
@@ -279,16 +275,12 @@ int64_t rotlock_write(int degree, int range) {
   }
   mutex_unlock(&rot_lock);
 
-  DEFINE_WAIT(wait);
-  add_wait_queue(&wait_head, &wait);
+  set_current_state(TASK_INTERRUPTIBLE);
   while (!is_grab(target)) {
-    prepare_to_wait(&wait_head, &wait, TASK_INTERRUPTIBLE);
-    if (signal_pending(current)) {
-      break;
-    }
     schedule();
+    set_current_state(TASK_INTERRUPTIBLE);
   }
-  finish_wait(&wait_head, &wait);
+  __set_current_state(TASK_RUNNING);
   return 0;
 }
 
