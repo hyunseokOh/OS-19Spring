@@ -9,13 +9,14 @@
 #define WRITER 0
 #define READER 1
 
-#define ZERO_RANGE_MASK (~(511 << 11))
-#define ONE_RANGE_MASK (511 << 11)
+#define RANGE_OFFSET (10)
+#define ZERO_RANGE_MASK (~(511 << RANGE_OFFSET))
+#define ONE_RANGE_MASK (511 << RANGE_OFFSET)
 
 #define GET_LOW(range) ((*(range) & 1) == 1 ? -((ZERO_RANGE_MASK & *(range)) >> 1) : (ZERO_RANGE_MASK & *(range)) >> 1)
-#define GET_HIGH(range) (GET_LOW(range) + (*(range) >> 11))
+#define GET_HIGH(range) (GET_LOW(range) + (*(range) >> RANGE_OFFSET))
 #define SET_LOW(range, value) (*(range) = ((value > 0) ? (value << 1) : ((-value) << 1) + 1) + (*(range) & ONE_RANGE_MASK))
-#define SET_RANGE(range, value) (*(range) = (ZERO_RANGE_MASK & *(range)) + (value << 11))
+#define SET_RANGE(range, value) (*(range) = (ZERO_RANGE_MASK & *(range)) + (value << RANGE_OFFSET))
 #define LOW(degree, range) (degree - range)
 #define RANGE(range) (range << 1)
 
