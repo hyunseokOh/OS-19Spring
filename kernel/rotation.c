@@ -1,18 +1,16 @@
 #include <linux/linkage.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
-#include <linux/printk.h>
 #include <linux/rotation.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/syscalls.h>
 #include <linux/types.h>
-#include <linux/wait.h>
 
 #include <uapi/asm-generic/errno-base.h>
 
-DEFINE_MUTEX(rot_lock);             /* for access shared data */
-int currentDegree = 0;              /* current device rotation */
+DEFINE_MUTEX(rot_lock); /* for access shared data */
+int currentDegree = 0;  /* current device rotation */
 struct list_head writerList = LIST_HEAD_INIT(writerList);
 struct list_head readerList = LIST_HEAD_INIT(readerList);
 
@@ -71,7 +69,7 @@ static inline struct lock_node *node_init(int degree, int range) {
     return NULL;
   }
   node->pid = current->pid;
-  node->range = 0;
+  SET_ZERO(&node->range);
   SET_LOW(&node->range, LOW(degree, range));
   SET_RANGE(&node->range, RANGE(range));
   node->grab = 0;
@@ -81,7 +79,8 @@ static inline struct lock_node *node_init(int degree, int range) {
   return node;
 }
 
-static inline void mask_invalid(struct list_head *head, char *validRange, int grabCheck) {
+static inline void mask_invalid(struct list_head *head, char *validRange,
+                                int grabCheck) {
   struct list_head *traverse = NULL;
   struct lock_node *data = NULL;
   int d_low;
@@ -122,7 +121,7 @@ static inline void mask_invalid(struct list_head *head, char *validRange, int gr
         }
       }
     } else {
-      /* make invalid */
+      /* make invalid directly */
       if (d_high < d_low) {
         for (i = 0; i <= d_high; i++) {
           validRange[i] = 0;
@@ -150,7 +149,7 @@ static inline int list_delete(struct list_head *head,
     data = container_of(traverse, struct lock_node, lnode);
     compare = node_compare(data, target);
     if (compare == 0 && data->grab == 1) {
-      /* 
+      /*
        * match! delete
        */
       list_del(&data->lnode);
@@ -242,7 +241,8 @@ int64_t rotlock_read(int degree, int range) {
   /* shared data access */
   mutex_lock(&rot_lock);
   list_add_tail(&target->lnode, &readerList);
-  if (in_range(currentDegree, GET_LOW(&target->range), GET_HIGH(&target->range))) {
+  if (in_range(currentDegree, GET_LOW(&target->range),
+               GET_HIGH(&target->range))) {
     /*
      * Try to grab lock directly, however, it could be failed if
      * there is writer lock (grab or wait either)
@@ -279,7 +279,8 @@ int64_t rotlock_write(int degree, int range) {
 
   mutex_lock(&rot_lock);
   list_add_tail(&target->lnode, &writerList);
-  if (in_range(currentDegree, GET_LOW(&target->range), GET_HIGH(&target->range))) {
+  if (in_range(currentDegree, GET_LOW(&target->range),
+               GET_HIGH(&target->range))) {
     /*
      * try to grab lock directly
      */
@@ -315,6 +316,7 @@ int64_t rotunlock_read(int degree, int range) {
   mutex_lock(&rot_lock);
   deleteResult = list_delete(&readerList, &target);
   if (deleteResult == 0) {
+    /* delete failed */
     mutex_unlock(&rot_lock);
     return -1;
   } else {

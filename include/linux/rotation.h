@@ -3,8 +3,8 @@
 
 #include <linux/list.h>
 #include <linux/printk.h>
-#include <linux/types.h>
 #include <linux/sched.h>
+#include <linux/types.h>
 
 #define WRITER 0
 #define READER 1
@@ -13,10 +13,16 @@
 #define ZERO_RANGE_MASK (~(511 << RANGE_OFFSET))
 #define ONE_RANGE_MASK (511 << RANGE_OFFSET)
 
-#define GET_LOW(range) ((*(range) & 1) == 1 ? -((ZERO_RANGE_MASK & *(range)) >> 1) : (ZERO_RANGE_MASK & *(range)) >> 1)
+#define GET_LOW(range)                                      \
+  ((*(range)&1) == 1 ? -((ZERO_RANGE_MASK & *(range)) >> 1) \
+                     : (ZERO_RANGE_MASK & *(range)) >> 1)
 #define GET_HIGH(range) (GET_LOW(range) + (*(range) >> RANGE_OFFSET))
-#define SET_LOW(range, value) (*(range) = ((value > 0) ? (value << 1) : ((-value) << 1) + 1) + (*(range) & ONE_RANGE_MASK))
-#define SET_RANGE(range, value) (*(range) = (ZERO_RANGE_MASK & *(range)) + (value << RANGE_OFFSET))
+#define SET_LOW(range, value)                                      \
+  (*(range) = ((value > 0) ? (value << 1) : ((-value) << 1) + 1) + \
+              (*(range)&ONE_RANGE_MASK))
+#define SET_RANGE(range, value) \
+  (*(range) = (ZERO_RANGE_MASK & *(range)) + (value << RANGE_OFFSET))
+#define SET_ZERO(range) (*(range) = 0)
 #define LOW(degree, range) (degree - range)
 #define RANGE(range) (range << 1)
 
