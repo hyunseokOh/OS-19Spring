@@ -11,7 +11,6 @@
 
 #include <uapi/asm-generic/errno-base.h>
 
-DECLARE_WAIT_QUEUE_HEAD(wait_head); /* wait queue */
 DEFINE_MUTEX(rot_lock);             /* for access shared data */
 int currentDegree = 0;              /* current device rotation */
 struct list_head writerList = LIST_HEAD_INIT(writerList);
@@ -61,7 +60,7 @@ int exit_rotlock(pid_t pid) {
   return totalDelete;
 }
 
-static inline struct lock_node *node_init(int r_low, int r_high) {
+static inline struct lock_node *node_init(int degree, int range) {
   /*
    * Constructor for lock_node
    */
@@ -72,8 +71,9 @@ static inline struct lock_node *node_init(int r_low, int r_high) {
     return NULL;
   }
   node->pid = current->pid;
-  node->low = r_low;
-  node->high = r_high;
+  node->range = 0;
+  SET_LOW(&node->range, LOW(degree, range));
+  SET_RANGE(&node->range, RANGE(range));
   node->grab = 0;
   node->task = current;
   INIT_LIST_HEAD(&node->lnode);
@@ -81,29 +81,63 @@ static inline struct lock_node *node_init(int r_low, int r_high) {
   return node;
 }
 
-static inline struct lock_node *intersect_exist(struct list_head *head, int low,
-                                                int high, int grabCheck) {
+static inline void mask_invalid(struct list_head *head, char *validRange, int grabCheck) {
+  struct list_head *traverse = NULL;
   struct lock_node *data = NULL;
-  struct list_head *traverse;
   int d_low;
   int d_high;
+  int i;
 
   list_for_each(traverse, head) {
     data = container_of(traverse, struct lock_node, lnode);
-    d_low = data->low;
-    d_high = data->high;
-    if (is_intersect(low, high, d_low, d_high)) {
-      /* intersection found */
-      if (grabCheck) {
-        if (data->grab) {
-          return data;
+    d_low = GET_LOW(&data->range);
+    d_high = GET_HIGH(&data->range);
+    if (d_low < 0) {
+      d_low += 360;
+    }
+    if (d_high < 0) {
+      d_high += 360;
+    }
+    if (d_low >= 360) {
+      d_low -= 360;
+    }
+    if (d_high >= 360) {
+      d_high -= 360;
+    }
+    if (grabCheck) {
+      if (data->grab) {
+        /* make invalid */
+        if (d_high < d_low) {
+          for (i = 0; i <= d_high; i++) {
+            validRange[i] = 0;
+          }
+          for (i = d_low; i <= 359; i++) {
+            validRange[i] = 0;
+          }
+        } else {
+          /* d_high > d_low */
+          for (i = d_low; i <= d_high; i++) {
+            validRange[i] = 0;
+          }
+        }
+      }
+    } else {
+      /* make invalid */
+      if (d_high < d_low) {
+        for (i = 0; i <= d_high; i++) {
+          validRange[i] = 0;
+        }
+        for (i = d_low; i <= 359; i++) {
+          validRange[i] = 0;
         }
       } else {
-        return data;
+        /* d_high > d_low */
+        for (i = d_low; i <= d_high; i++) {
+          validRange[i] = 0;
+        }
       }
     }
   }
-  return NULL;
 }
 
 static inline int list_delete(struct list_head *head,
@@ -134,47 +168,35 @@ static inline int grab_locks(int type) {
   int totalGrab = 0;
   int d_low;
   int d_high;
+  char validRange[360];
+  int i;
+
+  for (i = 0; i < 360; i++) {
+    /* initialize */
+    validRange[i] = 1;
+  }
 
   if (type == WRITER) {
     head = &writerList;
+    mask_invalid(&writerList, validRange, 1);
+    mask_invalid(&readerList, validRange, 1);
   } else {
     head = &readerList;
+    mask_invalid(&writerList, validRange, 0);
   }
 
   list_for_each(traverse, head) {
     data = container_of(traverse, struct lock_node, lnode);
-    d_low = data->low;
-    d_high = data->high;
-    if (in_range(currentDegree, d_low, d_high)) {
-      /* possible candidate */
-      if (!data->grab) {
+    d_low = GET_LOW(&data->range);
+    d_high = GET_HIGH(&data->range);
+    if (!data->grab && in_range(currentDegree, d_low, d_high)) {
+      if (is_valid(validRange, d_low, d_high)) {
+        data->grab = 1;
+        totalGrab++;
+        wake_up_process(data->task);
         if (type == WRITER) {
-          /*
-           * Writer can grab lock iff
-           *  1. No writer grabs lock intersected range currently
-           *  2. No reader grabs lock intersected range currently
-           */
-          if (intersect_exist(&writerList, d_low, d_high, 1) == NULL &&
-              intersect_exist(&readerList, d_low, d_high, 1) == NULL) {
-            /* can grab! */
-            data->grab = 1;
-            totalGrab++;
-            wake_up_process(data->task);
-            /* no more writer available in currentDegree*/
-            break;
-          }
-        } else {
-          /*
-           * Reader can grab lock iff
-           *  1. No writer grabs lock intersected range currently
-           *  2. No writer waits lock intersected range currently
-           */
-          if (intersect_exist(&writerList, d_low, d_high, 0) == NULL) {
-            /* can grab! */
-            data->grab = 1;
-            totalGrab++;
-            wake_up_process(data->task);
-          }
+          /* no more writer is available in current degree */
+          break;
         }
       }
     }
@@ -204,8 +226,6 @@ int64_t set_rotation(int degree) {
 
 int64_t rotlock_read(int degree, int range) {
   struct lock_node *target = NULL;
-  int low;
-  int high;
 
   if (degree < 0 || degree >= 360) {
     return -EINVAL;
@@ -214,10 +234,7 @@ int64_t rotlock_read(int degree, int range) {
     return -EINVAL;
   }
 
-  low = degree - range;
-  high = degree + range;
-
-  target = node_init(low, high);
+  target = node_init(degree, range);
   if (target == NULL) {
     return -ENOMEM;
   }
@@ -225,7 +242,7 @@ int64_t rotlock_read(int degree, int range) {
   /* shared data access */
   mutex_lock(&rot_lock);
   list_add_tail(&target->lnode, &readerList);
-  if (in_range(currentDegree, low, high)) {
+  if (in_range(currentDegree, GET_LOW(&target->range), GET_HIGH(&target->range))) {
     /*
      * Try to grab lock directly, however, it could be failed if
      * there is writer lock (grab or wait either)
@@ -246,8 +263,6 @@ int64_t rotlock_read(int degree, int range) {
 
 int64_t rotlock_write(int degree, int range) {
   struct lock_node *target = NULL;
-  int low;
-  int high;
 
   if (degree < 0 || degree >= 360) {
     return -EINVAL;
@@ -256,10 +271,7 @@ int64_t rotlock_write(int degree, int range) {
     return -EINVAL;
   }
 
-  low = degree - range;
-  high = degree + range;
-
-  target = node_init(low, high);
+  target = node_init(degree, range);
 
   if (target == NULL) {
     return -ENOMEM;
@@ -267,7 +279,7 @@ int64_t rotlock_write(int degree, int range) {
 
   mutex_lock(&rot_lock);
   list_add_tail(&target->lnode, &writerList);
-  if (in_range(currentDegree, low, high)) {
+  if (in_range(currentDegree, GET_LOW(&target->range), GET_HIGH(&target->range))) {
     /*
      * try to grab lock directly
      */
@@ -286,8 +298,6 @@ int64_t rotlock_write(int degree, int range) {
 
 int64_t rotunlock_read(int degree, int range) {
   struct lock_node target;
-  int low;
-  int high;
   int deleteResult;
 
   if (degree < 0 || degree >= 360) {
@@ -297,11 +307,9 @@ int64_t rotunlock_read(int degree, int range) {
     return -EINVAL;
   }
 
-  low = degree - range;
-  high = degree + range;
-
-  target.low = low;
-  target.high = high;
+  target.range = 0;
+  SET_LOW(&(target.range), LOW(degree, range));
+  SET_RANGE(&(target.range), RANGE(range));
   target.pid = current->pid;
 
   mutex_lock(&rot_lock);
@@ -319,8 +327,6 @@ int64_t rotunlock_read(int degree, int range) {
 
 int64_t rotunlock_write(int degree, int range) {
   struct lock_node target;
-  int low;
-  int high;
   int deleteResult;
 
   if (degree < 0 || degree >= 360) {
@@ -330,11 +336,9 @@ int64_t rotunlock_write(int degree, int range) {
     return -EINVAL;
   }
 
-  low = degree - range;
-  high = degree + range;
-
-  target.low = low;
-  target.high = high;
+  target.range = 0;
+  SET_LOW(&(target.range), LOW(degree, range));
+  SET_RANGE(&(target.range), RANGE(range));
   target.pid = current->pid;
 
   mutex_lock(&rot_lock);
