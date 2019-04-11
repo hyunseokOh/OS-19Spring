@@ -14,44 +14,6 @@ int currentDegree = 0;  /* current device rotation */
 struct list_head writerList = LIST_HEAD_INIT(writerList);
 struct list_head readerList = LIST_HEAD_INIT(readerList);
 
-int exit_rotlock(pid_t pid) {
-  /* iterate over list, clear up all requests, lock, called by pid */
-  struct lock_node *data;
-  struct list_head *traverse;
-  struct list_head *tmp;
-  struct list_head *head;
-  int totalDelete = 0;
-
-  mutex_lock(&rot_lock);
-  head = &readerList;
-  list_for_each_safe(traverse, tmp, head) {
-    data = container_of(traverse, struct lock_node, lnode);
-    if (data->pid == pid) {
-      list_del(&data->lnode);
-      kfree(data);
-      totalDelete++;
-    }
-  }
-
-  head = &writerList;
-  list_for_each_safe(traverse, tmp, head) {
-    data = container_of(traverse, struct lock_node, lnode);
-    if (data->pid == pid) {
-      list_del(&data->lnode);
-      kfree(data);
-      totalDelete++;
-    }
-  }
-
-  /* try to grab other available locks */
-  grab_locks(WRITER);
-  grab_locks(READER);
-
-  mutex_unlock(&rot_lock);
-
-  return totalDelete;
-}
-
 static inline struct lock_node *node_init(int degree, int range) {
   /*
    * Constructor for lock_node
@@ -368,6 +330,45 @@ int64_t rotunlock_write(int degree, int range) {
   mutex_unlock(&rot_lock);
   return 0;
 }
+
+int exit_rotlock(pid_t pid) {
+  /* iterate over list, clear up all requests, lock, called by pid */
+  struct lock_node *data;
+  struct list_head *traverse;
+  struct list_head *tmp;
+  struct list_head *head;
+  int totalDelete = 0;
+
+  mutex_lock(&rot_lock);
+  head = &readerList;
+  list_for_each_safe(traverse, tmp, head) {
+    data = container_of(traverse, struct lock_node, lnode);
+    if (data->pid == pid) {
+      list_del(&data->lnode);
+      kfree(data);
+      totalDelete++;
+    }
+  }
+
+  head = &writerList;
+  list_for_each_safe(traverse, tmp, head) {
+    data = container_of(traverse, struct lock_node, lnode);
+    if (data->pid == pid) {
+      list_del(&data->lnode);
+      kfree(data);
+      totalDelete++;
+    }
+  }
+
+  /* try to grab other available locks */
+  grab_locks(WRITER);
+  grab_locks(READER);
+
+  mutex_unlock(&rot_lock);
+
+  return totalDelete;
+}
+
 
 asmlinkage long sys_set_rotation(int degree) { return set_rotation(degree); }
 
