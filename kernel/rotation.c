@@ -14,17 +14,6 @@ int currentDegree = 0;  /* current device rotation */
 struct list_head writerList = LIST_HEAD_INIT(writerList);
 struct list_head readerList = LIST_HEAD_INIT(readerList);
 
-static inline bool is_grab(struct lock_node *data) {
-  /*
-   * Safe checking for whether grabbed
-   */
-  bool result = 0;
-  mutex_lock(&rot_lock);
-  result = data->grab;
-  mutex_unlock(&rot_lock);
-  return result;
-}
-
 int exit_rotlock(pid_t pid) {
   /* iterate over list, clear up all requests, lock, called by pid */
   struct lock_node *data;
@@ -271,10 +260,9 @@ int64_t rotlock_read(int degree, int range) {
       list_del(&target->lnode);
       kfree(target);
       return -EINTR;
-    } else {
-      set_current_state(TASK_INTERRUPTIBLE);
-      mutex_lock(&rot_lock);
     }
+    set_current_state(TASK_INTERRUPTIBLE);
+    mutex_lock(&rot_lock);
   }
   __set_current_state(TASK_RUNNING);
   mutex_unlock(&rot_lock);
@@ -318,10 +306,9 @@ int64_t rotlock_write(int degree, int range) {
       list_del(&target->lnode);
       kfree(target);
       return -EINTR;
-    } else {
-      set_current_state(TASK_INTERRUPTIBLE);
-      mutex_lock(&rot_lock);
     }
+    set_current_state(TASK_INTERRUPTIBLE);
+    mutex_lock(&rot_lock);
   }
   __set_current_state(TASK_RUNNING);
   mutex_unlock(&rot_lock);
