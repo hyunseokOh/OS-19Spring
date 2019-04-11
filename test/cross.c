@@ -7,7 +7,6 @@
 #define SYSCALL_ROTUNLOCK_READ 401
 #define SYSCALL_ROTUNLOCK_WRITE 402
 #define N_THREAD 2
-#define INCREMENT 10000
 
 #include <errno.h>
 #include <limits.h>
@@ -20,6 +19,8 @@
 #include <sys/types.h>
 
 int global_value = 0;
+int INCREMENT = 1000;
+int verbose = 0;
 
 void *increment_global(void *arg) {
   int i;
@@ -28,6 +29,7 @@ void *increment_global(void *arg) {
     /* 10 <= range <= 60 */
     syscall(SYSCALL_ROTLOCK_WRITE, 30, 40);
     global_value++;
+    if (verbose) printf("Global value from increment = %d\n", global_value);
     syscall(SYSCALL_ROTUNLOCK_WRITE, 30, 40);
   }
 }
@@ -39,11 +41,15 @@ void *decrement_global(void *arg) {
     /* 300 <= range <= 400 (40) */
     syscall(SYSCALL_ROTLOCK_WRITE, 350, 50);
     global_value--;
+    if (verbose) printf("Global value from decrement = %d\n", global_value);
     syscall(SYSCALL_ROTUNLOCK_WRITE, 350, 50);
   }
 }
 
-int main(){
+int main(int argc, char *argv[]){
+  char *endPtr;
+  INCREMENT = strtol(argv[1], &endPtr, 10);
+  verbose = strtol(argv[2], &endPtr, 10);
   pthread_t threads[N_THREAD];
   pthread_create(&threads[0], NULL, &increment_global, NULL);
   pthread_create(&threads[1], NULL, &decrement_global, NULL);

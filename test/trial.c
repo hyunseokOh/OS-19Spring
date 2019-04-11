@@ -83,18 +83,22 @@ int main(int argc, char *argv[]) {
   }
 
   signal(SIGINT, intHandler);
-  fp = fopen("integer", "r");
 
   while (trialRun) {
-    /* TODO (taebum) require read lock before read */
     syscall(SYSCALL_ROTLOCK_READ, 90, 90);
-    fscanf(fp, "%d\n", &target);
-    factorization(target, id);
-    /* TODO (taebum) read lock release */
+    fp = fopen("integer", "r");
+    if (fp != NULL) {
+      fscanf(fp, "%d\n", &target);
+      factorization(target, id);
+      fclose(fp);
+      fp = NULL;
+    }
     syscall(SYSCALL_ROTUNLOCK_READ, 90, 90);
-    rewind(fp);
-
   }
 
-  fclose(fp);
+  if (fp != NULL) {
+    fclose(fp);
+    fp = NULL;
+  }
+  return 0;
 }

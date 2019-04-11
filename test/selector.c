@@ -45,15 +45,21 @@ int main(int argc, char *argv[]) {
   }
 
   signal(SIGINT, intHandler);
-  fp = fopen("integer", "w");
 
   while (selectorRun) {
     syscall(SYSCALL_ROTLOCK_WRITE, 90, 90);
-    fprintf(fp, "%d\n", num);
-    printf("selector: %d\n", num++);
+    fp = fopen("integer", "w");
+    if (fp != NULL) {
+      fprintf(fp, "%d\n", num);
+      printf("selector: %d\n", num++);
+      fclose(fp);
+      fp = NULL;
+    }
     syscall(SYSCALL_ROTUNLOCK_WRITE, 90, 90);
-    rewind(fp);
   }
 
-  fclose(fp);
+  if (fp != NULL) {
+    fclose(fp);
+    fp = NULL;
+  }
 }
