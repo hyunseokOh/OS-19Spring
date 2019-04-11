@@ -53,6 +53,11 @@ int exit_rotlock(pid_t pid) {
       totalDelete++;
     }
   }
+
+  /* try to grab other available locks */
+  grab_locks(WRITER);
+  grab_locks(READER);
+
   mutex_unlock(&rot_lock);
 
   return totalDelete;
@@ -239,6 +244,7 @@ int64_t rotlock_read(int degree, int range) {
   }
 
   target = node_init(degree, range);
+
   if (target == NULL) {
     return -ENOMEM;
   }
@@ -257,12 +263,21 @@ int64_t rotlock_read(int degree, int range) {
   mutex_unlock(&rot_lock);
 
   set_current_state(TASK_INTERRUPTIBLE);
-  while (!is_grab(target)) {
+  mutex_lock(&rot_lock);
+  while (!target->grab) {
+    mutex_unlock(&rot_lock);
     schedule();
-    set_current_state(TASK_INTERRUPTIBLE);
+    if (signal_pending(current)) {
+      list_del(&target->lnode);
+      kfree(target);
+      return -EINTR;
+    } else {
+      set_current_state(TASK_INTERRUPTIBLE);
+      mutex_lock(&rot_lock);
+    }
   }
   __set_current_state(TASK_RUNNING);
-
+  mutex_unlock(&rot_lock);
   return 0;
 }
 
@@ -279,6 +294,7 @@ int64_t rotlock_write(int degree, int range) {
   target = node_init(degree, range);
 
   if (target == NULL) {
+    /* allocation failed */
     return -ENOMEM;
   }
 
@@ -294,11 +310,21 @@ int64_t rotlock_write(int degree, int range) {
   mutex_unlock(&rot_lock);
 
   set_current_state(TASK_INTERRUPTIBLE);
-  while (!is_grab(target)) {
+  mutex_lock(&rot_lock);
+  while (!target->grab) {
+    mutex_unlock(&rot_lock);
     schedule();
-    set_current_state(TASK_INTERRUPTIBLE);
+    if (signal_pending(current)) {
+      list_del(&target->lnode);
+      kfree(target);
+      return -EINTR;
+    } else {
+      set_current_state(TASK_INTERRUPTIBLE);
+      mutex_lock(&rot_lock);
+    }
   }
   __set_current_state(TASK_RUNNING);
+  mutex_unlock(&rot_lock);
   return 0;
 }
 
@@ -320,16 +346,13 @@ int64_t rotunlock_read(int degree, int range) {
 
   mutex_lock(&rot_lock);
   deleteResult = list_delete(&readerList, &target);
-  if (deleteResult == 0) {
-    /* delete failed */
-    mutex_unlock(&rot_lock);
-    return -1;
-  } else {
+  if (deleteResult) {
+    /* delete success, try to grab others */
     grab_locks(WRITER);
     grab_locks(READER);
-    mutex_unlock(&rot_lock);
-    return 0;
   }
+  mutex_unlock(&rot_lock);
+  return 0;
 }
 
 int64_t rotunlock_write(int degree, int range) {
@@ -350,16 +373,13 @@ int64_t rotunlock_write(int degree, int range) {
 
   mutex_lock(&rot_lock);
   deleteResult = list_delete(&writerList, &target);
-  if (deleteResult == 0) {
-    /* delete failed */
-    mutex_unlock(&rot_lock);
-    return -1;
-  } else {
+  if (deleteResult) {
+    /* delete success, try to grab others */
     grab_locks(WRITER);
     grab_locks(READER);
-    mutex_unlock(&rot_lock);
-    return 0;
   }
+  mutex_unlock(&rot_lock);
+  return 0;
 }
 
 asmlinkage long sys_set_rotation(int degree) { return set_rotation(degree); }
