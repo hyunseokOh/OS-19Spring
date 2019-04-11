@@ -18,10 +18,10 @@
                      : (ZERO_RANGE_MASK & *(range)) >> 1)
 #define GET_HIGH(range) (GET_LOW(range) + (*(range) >> RANGE_OFFSET))
 #define SET_LOW(range, value)                                      \
-  (*(range) = ((value > 0) ? (value << 1) : ((-value) << 1) + 1) + \
+  (*(range) = ((value > 0) ? (value << 1) : ((-value) << 1) | 1) | \
               (*(range)&ONE_RANGE_MASK))
 #define SET_RANGE(range, value) \
-  (*(range) = (ZERO_RANGE_MASK & *(range)) + (value << RANGE_OFFSET))
+  (*(range) = (ZERO_RANGE_MASK & *(range)) | (value << RANGE_OFFSET))
 #define SET_ZERO(range) (*(range) = 0)
 #define LOW(degree, range) (degree - range)
 #define RANGE(range) (range << 1)
@@ -36,7 +36,7 @@ int exit_rotlock(pid_t pid);
 struct lock_node {
   pid_t pid;
   int range;
-  int grab;
+  bool grab;
   struct task_struct *task;
 
   struct list_head lnode;

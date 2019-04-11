@@ -14,11 +14,11 @@ int currentDegree = 0;  /* current device rotation */
 struct list_head writerList = LIST_HEAD_INIT(writerList);
 struct list_head readerList = LIST_HEAD_INIT(readerList);
 
-static inline int is_grab(struct lock_node *data) {
+static inline bool is_grab(struct lock_node *data) {
   /*
    * Safe checking for whether grabbed
    */
-  int result = 0;
+  bool result = 0;
   mutex_lock(&rot_lock);
   result = data->grab;
   mutex_unlock(&rot_lock);
@@ -72,7 +72,7 @@ static inline struct lock_node *node_init(int degree, int range) {
   SET_ZERO(&node->range);
   SET_LOW(&node->range, LOW(degree, range));
   SET_RANGE(&node->range, RANGE(range));
-  node->grab = 0;
+  node->grab = false;
   node->task = current;
   INIT_LIST_HEAD(&node->lnode);
 
@@ -148,7 +148,7 @@ static inline int list_delete(struct list_head *head,
   list_for_each_safe(traverse, tmp, head) {
     data = container_of(traverse, struct lock_node, lnode);
     compare = node_compare(data, target);
-    if (compare == 0 && data->grab == 1) {
+    if (compare == 0 && data->grab) {
       /*
        * match! delete
        */
@@ -190,7 +190,7 @@ static inline int grab_locks(int type) {
     d_high = GET_HIGH(&data->range);
     if (!data->grab && in_range(currentDegree, d_low, d_high)) {
       if (is_valid(validRange, d_low, d_high)) {
-        data->grab = 1;
+        data->grab = true;
         totalGrab++;
         wake_up_process(data->task);
         if (type == WRITER) {
@@ -206,6 +206,11 @@ static inline int grab_locks(int type) {
 int64_t set_rotation(int degree) {
   int64_t result;
   result = 0;
+
+  if (degree < 0 || degree >= 360) {
+    /* error case */
+    return -EINVAL;
+  }
 
   mutex_lock(&rot_lock);
 
