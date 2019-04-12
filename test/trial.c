@@ -9,11 +9,15 @@
 #include <time.h>
 #include <unistd.h>
 
-static int trialRun = 1;
+static FILE *fp = NULL;
 
 void intHandler(int sig) {
   /* handle ctrl-c interrupt */
-  trialRun = 0;
+  if (fp != NULL) {
+    fclose(fp);
+    fp = NULL;
+  }
+  exit(0);
 }
 
 void factorization(int target, int id) {
@@ -84,8 +88,11 @@ int main(int argc, char *argv[]) {
 
   signal(SIGINT, intHandler);
 
-  while (trialRun) {
-    syscall(SYSCALL_ROTLOCK_READ, 90, 90);
+  while (1) {
+    if (syscall(SYSCALL_ROTLOCK_READ, 90, 90) == -1) {
+      printf("Failed to acquire READ_LOCK\n");
+      return 0;
+    }
     fp = fopen("integer", "r");
     if (fp != NULL) {
       fscanf(fp, "%d\n", &target);
@@ -93,12 +100,10 @@ int main(int argc, char *argv[]) {
       fclose(fp);
       fp = NULL;
     }
-    syscall(SYSCALL_ROTUNLOCK_READ, 90, 90);
-  }
-
-  if (fp != NULL) {
-    fclose(fp);
-    fp = NULL;
+    if (syscall(SYSCALL_ROTUNLOCK_READ, 90, 90) == -1) {
+      printf("Failed to release READ_LOCK\n");
+      return 0;
+    }
   }
   return 0;
 }

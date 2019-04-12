@@ -9,17 +9,20 @@
 #include <time.h>
 #include <unistd.h>
 
-static int selectorRun = 1;
+static FILE *fp = NULL;
 
 void intHandler(int sig) {
   /* handle ctrl-c interrupt */
-  selectorRun = 0;
+  if (fp != NULL) {
+    fclose(fp);
+    fp = NULL;
+  }
+  exit(0);
 }
 
 int main(int argc, char *argv[]) {
   int num;
   long longNum;
-  FILE *fp = NULL;
   char *endPtr = NULL;
 
   if (argc < 2) {
@@ -46,20 +49,23 @@ int main(int argc, char *argv[]) {
 
   signal(SIGINT, intHandler);
 
-  while (selectorRun) {
-    syscall(SYSCALL_ROTLOCK_WRITE, 90, 90);
-    fp = fopen("integer", "w");
+  fp = fopen("integer", "w");
+  while (1) {
+    if (syscall(SYSCALL_ROTLOCK_WRITE, 90, 90) == -1) {
+      printf("Failed to acquire WRITE_LOCK\n");
+      return 0;
+    }
     if (fp != NULL) {
       fprintf(fp, "%d\n", num);
       printf("selector: %d\n", num++);
-      fclose(fp);
-      fp = NULL;
+      rewind(fp);
+    } else {
+      fp = fopen("integer", "w");
     }
-    syscall(SYSCALL_ROTUNLOCK_WRITE, 90, 90);
+    if (syscall(SYSCALL_ROTUNLOCK_WRITE, 90, 90) == -1) {
+      printf("Failed to release WRITE_LOCK\n");
+      return 0;
+    }
   }
-
-  if (fp != NULL) {
-    fclose(fp);
-    fp = NULL;
-  }
+  return 0;
 }

@@ -165,7 +165,7 @@ int64_t set_rotation(int degree) {
 
   if (degree < 0 || degree >= 360) {
     /* error case */
-    return -EINVAL;
+    return -1;
   }
 
   mutex_lock(&rot_lock);
@@ -188,16 +188,16 @@ int64_t rotlock_read(int degree, int range) {
   struct lock_node *target = NULL;
 
   if (degree < 0 || degree >= 360) {
-    return -EINVAL;
+    return -1;
   }
   if (range <= 0 || range >= 180) {
-    return -EINVAL;
+    return -1;
   }
 
   target = node_init(degree, range);
 
   if (target == NULL) {
-    return -ENOMEM;
+    return -1;
   }
 
   /* shared data access */
@@ -221,7 +221,7 @@ int64_t rotlock_read(int degree, int range) {
     if (signal_pending(current)) {
       list_del(&target->lnode);
       kfree(target);
-      return -EINTR;
+      return -1;
     }
     set_current_state(TASK_INTERRUPTIBLE);
     mutex_lock(&rot_lock);
@@ -235,17 +235,17 @@ int64_t rotlock_write(int degree, int range) {
   struct lock_node *target = NULL;
 
   if (degree < 0 || degree >= 360) {
-    return -EINVAL;
+    return -1;
   }
   if (range <= 0 || range >= 180) {
-    return -EINVAL;
+    return -1;
   }
 
   target = node_init(degree, range);
 
   if (target == NULL) {
     /* allocation failed */
-    return -ENOMEM;
+    return -1;
   }
 
   mutex_lock(&rot_lock);
@@ -267,7 +267,7 @@ int64_t rotlock_write(int degree, int range) {
     if (signal_pending(current)) {
       list_del(&target->lnode);
       kfree(target);
-      return -EINTR;
+      return -1;
     }
     set_current_state(TASK_INTERRUPTIBLE);
     mutex_lock(&rot_lock);
@@ -282,10 +282,10 @@ int64_t rotunlock_read(int degree, int range) {
   int deleteResult;
 
   if (degree < 0 || degree >= 360) {
-    return -EINVAL;
+    return -1;
   }
   if (range <= 0 || range >= 180) {
-    return -EINVAL;
+    return -1;
   }
 
   target.range = 0;
@@ -309,10 +309,10 @@ int64_t rotunlock_write(int degree, int range) {
   int deleteResult;
 
   if (degree < 0 || degree >= 360) {
-    return -EINVAL;
+    return -1;
   }
   if (range <= 0 || range >= 180) {
-    return -EINVAL;
+    return -1;
   }
 
   target.range = 0;
