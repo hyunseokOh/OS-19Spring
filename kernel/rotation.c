@@ -14,50 +14,6 @@ int currentDegree = 0;  /* current device rotation */
 struct list_head writerList = LIST_HEAD_INIT(writerList);
 struct list_head readerList = LIST_HEAD_INIT(readerList);
 
-static inline int is_grab(struct lock_node *data) {
-  /*
-   * Safe checking for whether grabbed
-   */
-  int result = 0;
-  mutex_lock(&rot_lock);
-  result = data->grab;
-  mutex_unlock(&rot_lock);
-  return result;
-}
-
-int exit_rotlock(pid_t pid) {
-  /* iterate over list, clear up all requests, lock, called by pid */
-  struct lock_node *data;
-  struct list_head *traverse;
-  struct list_head *tmp;
-  struct list_head *head;
-  int totalDelete = 0;
-
-  mutex_lock(&rot_lock);
-  head = &readerList;
-  list_for_each_safe(traverse, tmp, head) {
-    data = container_of(traverse, struct lock_node, lnode);
-    if (data->pid == pid) {
-      list_del(&data->lnode);
-      kfree(data);
-      totalDelete++;
-    }
-  }
-
-  head = &writerList;
-  list_for_each_safe(traverse, tmp, head) {
-    data = container_of(traverse, struct lock_node, lnode);
-    if (data->pid == pid) {
-      list_del(&data->lnode);
-      kfree(data);
-      totalDelete++;
-    }
-  }
-  mutex_unlock(&rot_lock);
-
-  return totalDelete;
-}
-
 static inline struct lock_node *node_init(int degree, int range) {
   /*
    * Constructor for lock_node
@@ -72,7 +28,7 @@ static inline struct lock_node *node_init(int degree, int range) {
   SET_ZERO(&node->range);
   SET_LOW(&node->range, LOW(degree, range));
   SET_RANGE(&node->range, RANGE(range));
-  node->grab = 0;
+  node->grab = false;
   node->task = current;
   INIT_LIST_HEAD(&node->lnode);
 
@@ -148,7 +104,7 @@ static inline int list_delete(struct list_head *head,
   list_for_each_safe(traverse, tmp, head) {
     data = container_of(traverse, struct lock_node, lnode);
     compare = node_compare(data, target);
-    if (compare == 0 && data->grab == 1) {
+    if (compare == 0 && data->grab) {
       /*
        * match! delete
        */
@@ -190,7 +146,7 @@ static inline int grab_locks(int type) {
     d_high = GET_HIGH(&data->range);
     if (!data->grab && in_range(currentDegree, d_low, d_high)) {
       if (is_valid(validRange, d_low, d_high)) {
-        data->grab = 1;
+        data->grab = true;
         totalGrab++;
         wake_up_process(data->task);
         if (type == WRITER) {
@@ -206,6 +162,11 @@ static inline int grab_locks(int type) {
 int64_t set_rotation(int degree) {
   int64_t result;
   result = 0;
+
+  if (degree < 0 || degree >= 360) {
+    /* error case */
+    return -1;
+  }
 
   mutex_lock(&rot_lock);
 
@@ -227,15 +188,16 @@ int64_t rotlock_read(int degree, int range) {
   struct lock_node *target = NULL;
 
   if (degree < 0 || degree >= 360) {
-    return -EINVAL;
+    return -1;
   }
   if (range <= 0 || range >= 180) {
-    return -EINVAL;
+    return -1;
   }
 
   target = node_init(degree, range);
+
   if (target == NULL) {
-    return -ENOMEM;
+    return -1;
   }
 
   /* shared data access */
@@ -252,12 +214,20 @@ int64_t rotlock_read(int degree, int range) {
   mutex_unlock(&rot_lock);
 
   set_current_state(TASK_INTERRUPTIBLE);
-  while (!is_grab(target)) {
+  mutex_lock(&rot_lock);
+  while (!target->grab) {
+    mutex_unlock(&rot_lock);
     schedule();
+    if (signal_pending(current)) {
+      list_del(&target->lnode);
+      kfree(target);
+      return -1;
+    }
     set_current_state(TASK_INTERRUPTIBLE);
+    mutex_lock(&rot_lock);
   }
   __set_current_state(TASK_RUNNING);
-
+  mutex_unlock(&rot_lock);
   return 0;
 }
 
@@ -265,16 +235,17 @@ int64_t rotlock_write(int degree, int range) {
   struct lock_node *target = NULL;
 
   if (degree < 0 || degree >= 360) {
-    return -EINVAL;
+    return -1;
   }
   if (range <= 0 || range >= 180) {
-    return -EINVAL;
+    return -1;
   }
 
   target = node_init(degree, range);
 
   if (target == NULL) {
-    return -ENOMEM;
+    /* allocation failed */
+    return -1;
   }
 
   mutex_lock(&rot_lock);
@@ -289,11 +260,20 @@ int64_t rotlock_write(int degree, int range) {
   mutex_unlock(&rot_lock);
 
   set_current_state(TASK_INTERRUPTIBLE);
-  while (!is_grab(target)) {
+  mutex_lock(&rot_lock);
+  while (!target->grab) {
+    mutex_unlock(&rot_lock);
     schedule();
+    if (signal_pending(current)) {
+      list_del(&target->lnode);
+      kfree(target);
+      return -1;
+    }
     set_current_state(TASK_INTERRUPTIBLE);
+    mutex_lock(&rot_lock);
   }
   __set_current_state(TASK_RUNNING);
+  mutex_unlock(&rot_lock);
   return 0;
 }
 
@@ -302,10 +282,10 @@ int64_t rotunlock_read(int degree, int range) {
   int deleteResult;
 
   if (degree < 0 || degree >= 360) {
-    return -EINVAL;
+    return -1;
   }
   if (range <= 0 || range >= 180) {
-    return -EINVAL;
+    return -1;
   }
 
   target.range = 0;
@@ -315,16 +295,13 @@ int64_t rotunlock_read(int degree, int range) {
 
   mutex_lock(&rot_lock);
   deleteResult = list_delete(&readerList, &target);
-  if (deleteResult == 0) {
-    /* delete failed */
-    mutex_unlock(&rot_lock);
-    return -1;
-  } else {
+  if (deleteResult) {
+    /* delete success, try to grab others */
     grab_locks(WRITER);
     grab_locks(READER);
-    mutex_unlock(&rot_lock);
-    return 0;
   }
+  mutex_unlock(&rot_lock);
+  return 0;
 }
 
 int64_t rotunlock_write(int degree, int range) {
@@ -332,10 +309,10 @@ int64_t rotunlock_write(int degree, int range) {
   int deleteResult;
 
   if (degree < 0 || degree >= 360) {
-    return -EINVAL;
+    return -1;
   }
   if (range <= 0 || range >= 180) {
-    return -EINVAL;
+    return -1;
   }
 
   target.range = 0;
@@ -345,17 +322,53 @@ int64_t rotunlock_write(int degree, int range) {
 
   mutex_lock(&rot_lock);
   deleteResult = list_delete(&writerList, &target);
-  if (deleteResult == 0) {
-    /* delete failed */
-    mutex_unlock(&rot_lock);
-    return -1;
-  } else {
+  if (deleteResult) {
+    /* delete success, try to grab others */
     grab_locks(WRITER);
     grab_locks(READER);
-    mutex_unlock(&rot_lock);
-    return 0;
   }
+  mutex_unlock(&rot_lock);
+  return 0;
 }
+
+int exit_rotlock(pid_t pid) {
+  /* iterate over list, clear up all requests, lock, called by pid */
+  struct lock_node *data;
+  struct list_head *traverse;
+  struct list_head *tmp;
+  struct list_head *head;
+  int totalDelete = 0;
+
+  mutex_lock(&rot_lock);
+  head = &readerList;
+  list_for_each_safe(traverse, tmp, head) {
+    data = container_of(traverse, struct lock_node, lnode);
+    if (data->pid == pid) {
+      list_del(&data->lnode);
+      kfree(data);
+      totalDelete++;
+    }
+  }
+
+  head = &writerList;
+  list_for_each_safe(traverse, tmp, head) {
+    data = container_of(traverse, struct lock_node, lnode);
+    if (data->pid == pid) {
+      list_del(&data->lnode);
+      kfree(data);
+      totalDelete++;
+    }
+  }
+
+  /* try to grab other available locks */
+  grab_locks(WRITER);
+  grab_locks(READER);
+
+  mutex_unlock(&rot_lock);
+
+  return totalDelete;
+}
+
 
 asmlinkage long sys_set_rotation(int degree) { return set_rotation(degree); }
 

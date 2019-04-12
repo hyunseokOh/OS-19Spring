@@ -6,31 +6,33 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <unistd.h>
 
-static FILE *fp = NULL;
+static int selectorRun = 1;
 
 void intHandler(int sig) {
   /* handle ctrl-c interrupt */
-  if (fp != NULL) {
-    fclose(fp);
-    fp = NULL;
-  }
-  exit(0);
+  selectorRun = 0;
 }
 
 int main(int argc, char *argv[]) {
   int num;
   long longNum;
+  FILE *fp = NULL;
   char *endPtr = NULL;
 
-  if (argc < 2) {
-    printf("Must pass starting integer argument\n");
+  if (argc != 4) {
+    printf("Example Usage: ./selector [starting num] [degree] [range] \n");
     return 0;
   }
 
   longNum = strtol(argv[1], &endPtr, 10);
+  /* TODO:(seonghoon) change depreciated atoi() to strtol with error-handling */
+  int degree = atoi(argv[2]);
+  int range = atoi(argv[3]);
+
 
   if (*endPtr) {
     /* endPtr points to NULL char only when the entire argument is a number */
@@ -49,23 +51,22 @@ int main(int argc, char *argv[]) {
 
   signal(SIGINT, intHandler);
 
-  fp = fopen("integer", "w");
-  while (1) {
-    if (syscall(SYSCALL_ROTLOCK_WRITE, 90, 90) == -1) {
-      printf("Failed to acquire WRITE_LOCK\n");
-      return 0;
-    }
+  while (selectorRun) {
+//    syscall(SYSCALL_ROTLOCK_WRITE, 90, 90);
+    syscall(SYSCALL_ROTLOCK_WRITE, degree, range);
+    fp = fopen("integer", "w");
     if (fp != NULL) {
       fprintf(fp, "%d\n", num);
       printf("selector: %d\n", num++);
-      rewind(fp);
-    } else {
-      fp = fopen("integer", "w");
+      fclose(fp);
+      fp = NULL;
     }
-    if (syscall(SYSCALL_ROTUNLOCK_WRITE, 90, 90) == -1) {
-      printf("Failed to release WRITE_LOCK\n");
-      return 0;
-    }
+//    syscall(SYSCALL_ROTUNLOCK_WRITE, 90, 90);
+    syscall(SYSCALL_ROTUNLOCK_WRITE, degree, range);
   }
-  return 0;
+
+  if (fp != NULL) {
+    fclose(fp);
+    fp = NULL;
+  }
 }

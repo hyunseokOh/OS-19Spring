@@ -1,7 +1,9 @@
 ### test object file ###
 test/test
 trial
+trial_arg
 selector
+selector_arg
 rotd
 integer
 
