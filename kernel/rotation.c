@@ -299,9 +299,12 @@ int64_t rotunlock_read(int degree, int range) {
     /* delete success, try to grab others */
     grab_locks(WRITER);
     grab_locks(READER);
+    mutex_unlock(&rot_lock);
+    return 0;
+  } else {
+    mutex_unlock(&rot_lock);
+    return -1;
   }
-  mutex_unlock(&rot_lock);
-  return 0;
 }
 
 int64_t rotunlock_write(int degree, int range) {
@@ -326,9 +329,12 @@ int64_t rotunlock_write(int degree, int range) {
     /* delete success, try to grab others */
     grab_locks(WRITER);
     grab_locks(READER);
+    mutex_unlock(&rot_lock);
+    return 0;
+  } else {
+    mutex_unlock(&rot_lock);
+    return -1;
   }
-  mutex_unlock(&rot_lock);
-  return 0;
 }
 
 int exit_rotlock(pid_t pid) {
