@@ -43,7 +43,7 @@
   - Receive degree and range as commandline argument (used for video demo)
 
 
-**Total Edited LOC: ???**
+**Total Edited LOC: 829**
 
 ## High Level Design and Implementation
 
