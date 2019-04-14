@@ -165,7 +165,7 @@ int64_t set_rotation(int degree) {
 
   if (degree < 0 || degree >= 360) {
     /* error case */
-    return -1;
+    return -EINVAL;
   }
 
   mutex_lock(&rot_lock);
@@ -188,16 +188,16 @@ int64_t rotlock_read(int degree, int range) {
   struct lock_node *target = NULL;
 
   if (degree < 0 || degree >= 360) {
-    return -1;
+    return -EINVAL;
   }
   if (range <= 0 || range >= 180) {
-    return -1;
+    return -EINVAL;
   }
 
   target = node_init(degree, range);
 
   if (target == NULL) {
-    return -1;
+    return -ENOMEM;
   }
 
   /* shared data access */
@@ -217,11 +217,15 @@ int64_t rotlock_read(int degree, int range) {
   mutex_lock(&rot_lock);
   while (!target->grab) {
     mutex_unlock(&rot_lock);
+    /*if (signal_pending(current)) {*/
     schedule();
     if (signal_pending(current)) {
+      /* terminate signal is pending */
+      mutex_lock(&rot_lock);
       list_del(&target->lnode);
+      mutex_unlock(&rot_lock);
       kfree(target);
-      return -1;
+      return -ERESTARTSYS;
     }
     set_current_state(TASK_INTERRUPTIBLE);
     mutex_lock(&rot_lock);
@@ -235,17 +239,17 @@ int64_t rotlock_write(int degree, int range) {
   struct lock_node *target = NULL;
 
   if (degree < 0 || degree >= 360) {
-    return -1;
+    return -EINVAL;
   }
   if (range <= 0 || range >= 180) {
-    return -1;
+    return -EINVAL;
   }
 
   target = node_init(degree, range);
 
   if (target == NULL) {
     /* allocation failed */
-    return -1;
+    return -ENOMEM;
   }
 
   mutex_lock(&rot_lock);
@@ -265,9 +269,11 @@ int64_t rotlock_write(int degree, int range) {
     mutex_unlock(&rot_lock);
     schedule();
     if (signal_pending(current)) {
+      mutex_lock(&rot_lock);
       list_del(&target->lnode);
+      mutex_unlock(&rot_lock);
       kfree(target);
-      return -1;
+      return -ERESTARTSYS;
     }
     set_current_state(TASK_INTERRUPTIBLE);
     mutex_lock(&rot_lock);
@@ -282,10 +288,10 @@ int64_t rotunlock_read(int degree, int range) {
   int deleteResult;
 
   if (degree < 0 || degree >= 360) {
-    return -1;
+    return -EINVAL;
   }
   if (range <= 0 || range >= 180) {
-    return -1;
+    return -EINVAL;
   }
 
   target.range = 0;
@@ -303,7 +309,7 @@ int64_t rotunlock_read(int degree, int range) {
     return 0;
   } else {
     mutex_unlock(&rot_lock);
-    return -1;
+    return -EINVAL;
   }
 }
 
@@ -312,10 +318,10 @@ int64_t rotunlock_write(int degree, int range) {
   int deleteResult;
 
   if (degree < 0 || degree >= 360) {
-    return -1;
+    return -EINVAL;
   }
   if (range <= 0 || range >= 180) {
-    return -1;
+    return -EINVAL;
   }
 
   target.range = 0;
@@ -333,7 +339,7 @@ int64_t rotunlock_write(int degree, int range) {
     return 0;
   } else {
     mutex_unlock(&rot_lock);
-    return -1;
+    return -EINVAL;
   }
 }
 
