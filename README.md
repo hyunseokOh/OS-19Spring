@@ -58,7 +58,6 @@
 
   (Motivation)
   - Given only list of locks, we need to iterate over the entire list for each `lock_node` to check if it can grab a lock. This can lead to theoretical worst-case complexity of O(n<sup>2</sup>).
-  - However, creating and managing a separate shared data structure for available ranges can lead to lock contention and trickier synchronization problems.
 
   (Implementation)
   - Therefore, we use `char validRange[360]`, whose scope is bounded to a single method.
