@@ -39,13 +39,15 @@
 
 - test/**cross.c**
   - Implement 'Banking Example' using rotation lock
+- test/**sigchld_test.c**
+  - Implement test to verify that SIGCHLD does not affect the normal execution flow of rotlock_read and rotlock_write
 - test/**selector_arg.c**
   - Receive degree and range as commandline argument (used for video demo)
 - test/**trial_arg.c**
   - Receive degree and range as commandline argument (used for video demo)
 
 
-**Total Edited LOC: 829**
+**Total Edited LOC: 881**
 
 ## High Level Design and Implementation
 
