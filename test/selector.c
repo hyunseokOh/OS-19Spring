@@ -25,8 +25,8 @@ int main(int argc, char *argv[]) {
   long longNum;
   char *endPtr = NULL;
 
-  if (argc < 2) {
-    printf("Must pass starting integer argument\n");
+  if (argc != 2) {
+    printf("Must pass starting integer as the only arugment!\n");
     return 0;
   }
 

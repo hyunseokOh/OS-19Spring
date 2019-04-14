@@ -64,8 +64,8 @@ int main(int argc, char *argv[]) {
   FILE *fp = NULL;
   char *endPtr = NULL;
 
-  if (argc < 2) {
-    printf("Must pass id number of trial\n");
+  if (argc != 2) {
+    printf("Must pass id number of trial as the only argument!\n");
     return 0;
   }
 
