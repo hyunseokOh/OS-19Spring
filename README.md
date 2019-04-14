@@ -51,6 +51,11 @@
 
 ## High Level Design and Implementation
 
+### Range Descriptor
+![range_descriptor](https://user-images.githubusercontent.com/22310099/56091907-f01ae580-5eef-11e9-819e-ff596465c1db.JPG)
+
+### Overall Design
+![overall_design](https://user-images.githubusercontent.com/22310099/56091906-edb88b80-5eef-11e9-874c-4fc9f3426f63.JPG)
 
 ## Optimization
 
