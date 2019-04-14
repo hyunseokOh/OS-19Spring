@@ -26,6 +26,8 @@
   - Add macros, declarations, and helper functions for rotation lock
 - kernel/**rotation.c**
   - Implement rotation lock
+- kernel/**exit.c**
+  - inject `exit_rotlock()` to `do_exit()`
 - **rotd.c**
   - updates the rotation value in the specific sequence in a fixed frequency
 - test/**selector.c**
