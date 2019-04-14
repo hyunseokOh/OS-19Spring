@@ -309,7 +309,7 @@ int64_t rotunlock_read(int degree, int range) {
     return 0;
   } else {
     mutex_unlock(&rot_lock);
-    return -1;
+    return -EINVAL;
   }
 }
 
@@ -339,7 +339,7 @@ int64_t rotunlock_write(int degree, int range) {
     return 0;
   } else {
     mutex_unlock(&rot_lock);
-    return -1;
+    return -EINVAL;
   }
 }
 
