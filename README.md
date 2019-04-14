@@ -88,7 +88,7 @@
 ![test2](https://user-images.githubusercontent.com/22310099/56062927-ea66b800-5da8-11e9-8657-ef93dbcb6f4e.gif)
 
 * Selector and trials grab locks **only** when the degree is 30
-* Trials **cannot** grab locks because **write lock request [29, 31] is waiting** and it **intersects** with read lock request of [0, 180]
+* Trials **cannot** grab locks in (30, 180] because **write lock request [29, 31] is waiting** which **intersects** with read lock request of [0, 180]
 
 ### Case 3: `./selector_arg 1 30 1` + `./trial_arg 0 90 90 & ./trial_arg 1 270 90`
 * selector: writer lock of range [29, 31]
