@@ -5037,6 +5037,31 @@ void io_schedule(void)
 EXPORT_SYMBOL(io_schedule);
 
 /**
+ * sys_sched_set_weight - set weight for the target process (with pid)
+ * if pid == 0, set the weight for the calling process
+ * @weight: weighted round robin scheduler weight
+ *
+ * Return: On success, this syscall return 0
+ * On failure, a negative error code is returned.
+ */
+SYSCALL_DEFINE2(sched_set_weight, pid_t, pid, int, weight)
+{
+  return 0;
+}
+
+/**
+ * sys_sched_get_weight - get weight for the target process (with pid)
+ * if pid == 0, get the weight for the calling process
+ * 
+ * Return: On success, this syscall return weight of the pid
+ * On failure, a negative error code is returned.
+ */
+SYSCALL_DEFINE1(sched_get_weight, pid_t, pid)
+{
+  return 0;
+}
+
+/**
  * sys_sched_get_priority_max - return maximum RT priority.
  * @policy: scheduling class.
  *

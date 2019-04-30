@@ -506,6 +506,13 @@ static inline int rt_bandwidth_enabled(void)
 # define HAVE_RT_PUSH_IPI
 #endif
 
+struct wrr_rq {
+  /* per-cpu wrr run_queue */
+  struct rq *rq;
+  unsigned int weight_sum; /* total weight of current wrr_rq */
+  unsigned int wrr_nr_running;
+};
+
 /* Real-Time classes' related field in a runqueue: */
 struct rt_rq {
 	struct rt_prio_array active;
@@ -706,6 +713,7 @@ struct rq {
 	u64 nr_switches;
 
 	struct cfs_rq cfs;
+  struct wrr_rq wrr;
 	struct rt_rq rt;
 	struct dl_rq dl;
 
@@ -1494,6 +1502,7 @@ static inline void set_curr_task(struct rq *rq, struct task_struct *curr)
 extern const struct sched_class stop_sched_class;
 extern const struct sched_class dl_sched_class;
 extern const struct sched_class rt_sched_class;
+extern const struct sched_class wrr_sched_class;
 extern const struct sched_class fair_sched_class;
 extern const struct sched_class idle_sched_class;
 

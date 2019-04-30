@@ -817,6 +817,10 @@ __SYSCALL(__NR_pkey_alloc, sys_pkey_alloc)
 __SYSCALL(__NR_pkey_free, sys_pkey_free)
 #define __NR_statx 397
 __SYSCALL(__NR_statx, sys_statx)
+#define __NR_sched_set_weight 398
+__SYSCALL(__NR_sched_set_weight, sys_sched_set_weight)
+#define __NR_sched_get_weight 399
+__SYSCALL(__NR_sched_get_weight, sys_sched_get_weight)
 
 /*
  * Please add new compat syscalls above this comment and update

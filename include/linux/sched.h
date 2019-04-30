@@ -468,6 +468,14 @@ struct sched_rt_entity {
 #endif
 } __randomize_layout;
 
+struct sched_wrr_entity {
+  /* For weighted round robin */
+  unsigned int weight;
+  unsigned int time_slice;
+  unsigned short on_wrr_rq;
+  struct list_head run_node;
+};
+
 struct sched_dl_entity {
 	struct rb_node			rb_node;
 
@@ -606,6 +614,7 @@ struct task_struct {
 	struct task_group		*sched_task_group;
 #endif
 	struct sched_dl_entity		dl;
+  struct sched_wrr_entity   wrr;
 
 #ifdef CONFIG_PREEMPT_NOTIFIERS
 	/* List of struct preempt_notifier: */
