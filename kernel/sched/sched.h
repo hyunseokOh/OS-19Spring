@@ -5,6 +5,7 @@
 #include <linux/sched/sysctl.h>
 #include <linux/sched/topology.h>
 #include <linux/sched/rt.h>
+#include <linux/sched/wrr.h>
 #include <linux/sched/deadline.h>
 #include <linux/sched/clock.h>
 #include <linux/sched/wake_q.h>
@@ -513,6 +514,12 @@ static inline int rt_bandwidth_enabled(void)
 
 struct wrr_rq {
   /* per-cpu wrr run_queue */
+
+  /* 
+   * rt_rq manage 100 list per internal priority 
+   * Thus, wrr needs a single queue since it has single priority
+   */
+  struct list_head wrr_rq_head;
   struct rq *rq;
   unsigned int weight_sum; /* total weight of current wrr_rq */
   unsigned int wrr_nr_running;
