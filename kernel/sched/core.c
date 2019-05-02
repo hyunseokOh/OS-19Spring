@@ -2384,14 +2384,19 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 		p->sched_reset_on_fork = 0;
 	}
 
-	if (dl_prio(p->prio)) {
-		put_cpu();
-		return -EAGAIN;
-	} else if (rt_prio(p->prio)) {
-		p->sched_class = &rt_sched_class;
-	} else {
-		p->sched_class = &fair_sched_class;
-	}
+  if (wrr_policy(p->policy)) {
+    /* keep wrr policy */
+    p->sched_class = &wrr_sched_class;
+  } else {
+    if (dl_prio(p->prio)) {
+      put_cpu();
+      return -EAGAIN;
+    } else if (rt_prio(p->prio)) {
+      p->sched_class = &rt_sched_class;
+    } else {
+      p->sched_class = &fair_sched_class;
+    }
+  }
 
 	init_entity_runnable_average(&p->se);
 
