@@ -3977,16 +3977,20 @@ static void __setscheduler(struct rq *rq, struct task_struct *p,
 	 * Keep a potential priority boosting if called from
 	 * sched_setscheduler().
 	 */
-	p->prio = normal_prio(p);
-	if (keep_boost)
-		p->prio = rt_effective_prio(p, p->prio);
+  if (p->policy == SCHED_WRR) {
+    p->sched_class = &wrr_sched_class;
+  } else {
+    p->prio = normal_prio(p);
+    if (keep_boost)
+      p->prio = rt_effective_prio(p, p->prio);
 
-	if (dl_prio(p->prio))
-		p->sched_class = &dl_sched_class;
-	else if (rt_prio(p->prio))
-		p->sched_class = &rt_sched_class;
-	else
-		p->sched_class = &fair_sched_class;
+    if (dl_prio(p->prio))
+      p->sched_class = &dl_sched_class;
+    else if (rt_prio(p->prio))
+      p->sched_class = &rt_sched_class;
+    else
+      p->sched_class = &fair_sched_class;
+  }
 }
 
 /*
@@ -4136,6 +4140,7 @@ recheck:
 		if (dl_policy(policy) && dl_param_changed(p, attr))
 			goto change;
 
+    /* For SCHED_WRR, there is no chance to alter other attributes */
 		p->sched_reset_on_fork = reset_on_fork;
 		task_rq_unlock(rq, p, &rf);
 		return 0;
@@ -5890,6 +5895,7 @@ void __init sched_init(void)
 		init_cfs_rq(&rq->cfs);
 		init_rt_rq(&rq->rt);
 		init_dl_rq(&rq->dl);
+    init_wrr_rq(&rq->wrr, rq);
 #ifdef CONFIG_FAIR_GROUP_SCHED
 		root_task_group.shares = ROOT_TASK_GROUP_LOAD;
 		INIT_LIST_HEAD(&rq->leaf_cfs_rq_list);
