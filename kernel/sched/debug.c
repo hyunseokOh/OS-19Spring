@@ -587,6 +587,23 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 #endif
 }
 
+void print_sched_wrr_entity(struct seq_file *m, struct sched_wrr_entity *wrr_se) {
+  SEQ_printf(m, "[weight = %u, time_slice = %u, on_rq = %u\n",
+      wrr_se->weight, wrr_se->time_slice, (unsigned int) wrr_se->on_rq);
+}
+
+void print_wrr_rq(struct seq_file *m, int cpu, struct wrr_rq *wrr_rq) {
+  SEQ_printf(m, "\nwrr_rq[%d]:\n", cpu);
+  struct list_head *head = &wrr_rq->head;
+  struct list_head *traverse;
+
+  struct sched_wrr_entity *wrr_se;
+  list_for_each(traverse, head) {
+    wrr_se = container_of(traverse, struct sched_wrr_entity, wrr_node);
+    print_sched_wrr_entity(m, wrr_se);
+  }
+}
+
 void print_rt_rq(struct seq_file *m, int cpu, struct rt_rq *rt_rq)
 {
 #ifdef CONFIG_RT_GROUP_SCHED
@@ -705,6 +722,7 @@ do {									\
 	print_cfs_stats(m, cpu);
 	print_rt_stats(m, cpu);
 	print_dl_stats(m, cpu);
+  print_wrr_stats(m, cpu);
 
 	print_rq(m, rq, cpu);
 	spin_unlock_irqrestore(&sched_debug_lock, flags);

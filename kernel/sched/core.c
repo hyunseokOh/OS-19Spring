@@ -4252,6 +4252,7 @@ change:
 	balance_callback(rq);
 	preempt_enable();
 
+
 	return 0;
 }
 
@@ -5901,7 +5902,7 @@ void __init sched_init(void)
 		init_rt_rq(&rq->rt);
 		init_dl_rq(&rq->dl);
 #ifdef CONFIG_SCHED_WRR
-    printk("GONGLE: initialize wrr_rq\n");
+    printk("GONGLE: init wrr rq\n");
     init_wrr_rq(&rq->wrr, rq);
 #endif
 #ifdef CONFIG_FAIR_GROUP_SCHED

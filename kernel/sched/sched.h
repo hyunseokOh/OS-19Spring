@@ -524,7 +524,7 @@ struct wrr_rq {
    * rt_rq manage 100 list per internal priority 
    * Thus, wrr needs a single queue since it has single priority
    */
-  struct list_head wrr_rq_head;
+  struct list_head head;
   struct rq *rq;
   unsigned int weight_sum; /* total weight of current wrr_rq */
   unsigned int wrr_nr_running;
@@ -1994,10 +1994,13 @@ extern bool sched_debug_enabled;
 
 extern void print_cfs_stats(struct seq_file *m, int cpu);
 extern void print_rt_stats(struct seq_file *m, int cpu);
+extern void print_wrr_stats(struct seq_file *m, int cpu);
 extern void print_dl_stats(struct seq_file *m, int cpu);
 extern void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq);
 extern void print_rt_rq(struct seq_file *m, int cpu, struct rt_rq *rt_rq);
 extern void print_dl_rq(struct seq_file *m, int cpu, struct dl_rq *dl_rq);
+extern void print_wrr_rq(struct seq_file *m, int cpu, struct wrr_rq *wrr_rq);
+extern void printk_sched_wrr_entity(struct sched_wrr_entity *wrr_se);
 #ifdef CONFIG_NUMA_BALANCING
 extern void
 show_numa_stats(struct task_struct *p, struct seq_file *m);

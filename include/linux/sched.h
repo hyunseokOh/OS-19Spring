@@ -472,7 +472,7 @@ struct sched_wrr_entity {
   /* For weighted round robin */
   unsigned int weight;
   unsigned int time_slice;
-  unsigned short on_wrr_rq;
+  unsigned short on_rq;
 
   struct wrr_rq *wrr_rq;
   struct list_head wrr_node;
