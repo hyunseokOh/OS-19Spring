@@ -5057,7 +5057,60 @@ EXPORT_SYMBOL(io_schedule);
  */
 SYSCALL_DEFINE2(sched_set_weight, pid_t, pid, int, weight)
 {
-  return 0;
+  struct task_struct *p = NULL;
+  struct rq *rq = NULL;
+  struct rq_flags rf;
+  kuid_t uid;
+  int previous_weight;
+  int is_root;
+
+  if (weight < 1 || weight > 20) {
+    /* invalid weight range */
+    return -EINVAL;
+  }
+
+  if (pid < 0) {
+    /* invalid pid (negative) */
+    return -EINVAL;
+  }
+
+  rcu_read_lock();
+  p = find_process_by_pid(pid);
+  if (p == NULL) {
+    /* failed to find task struct */
+    rcu_read_unlock();
+    return -ESRCH;
+  }
+
+  uid = current_cred()->uid;
+  is_root = uid.val == 0;
+  previous_weight = p->wrr.weight;
+  if (!is_root) {
+    if (!check_same_owner(p)) {
+      /* not owner of task */
+      rcu_read_unlock();
+      return -EPERM;
+    }
+    if (weight > previous_weight) {
+      /* only root user can increase weight */
+      rcu_read_unlock();
+      return -EPERM;
+    }
+  }
+
+  /* follow locking logic of sched_rr_get_interval */
+  rq = task_rq_lock(p, &rf);
+  if (p->policy == SCHED_WRR) {
+    /* actual modifying goes here */
+    task_rq_unlock(rq, p, &rf);
+    rcu_read_unlock();
+    return 0;
+  } else {
+    /* cannot modify */
+    task_rq_unlock(rq, p, &rf);
+    rcu_read_unlock();
+    return -EINVAL;
+  }
 }
 
 /**
@@ -5069,7 +5122,24 @@ SYSCALL_DEFINE2(sched_set_weight, pid_t, pid, int, weight)
  */
 SYSCALL_DEFINE1(sched_get_weight, pid_t, pid)
 {
-  return 0;
+  struct task_struct *p;
+  int weight;
+
+  if (pid < 0) {
+    return -EINVAL;
+  }
+
+  rcu_read_lock();
+  p = find_process_by_pid(pid);
+
+  if (p == NULL) {
+    rcu_read_unlock();
+    return -ESRCH;
+  }
+
+  weight = p->wrr.weight;
+  rcu_read_unlock();
+  return weight;
 }
 
 /**

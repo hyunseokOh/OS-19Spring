@@ -251,7 +251,7 @@ extern struct cred init_cred;
 	},								\
   .wrr  = {           \
     .weight = WRR_DEFAULT_WEIGHT,     \
-    .time_slice = WRR_DEFAULT_TIMESLICE,  \
+    .time_slice = WRR_TIMESLICE(WRR_DEFAULT_WEIGHT),  \
     .wrr_node = LIST_HEAD_INIT(tsk.wrr.wrr_node),   \
   },                \
 	.tasks		= LIST_HEAD_INIT(tsk.tasks),			\
