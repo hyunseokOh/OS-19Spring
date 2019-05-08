@@ -4334,6 +4334,9 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 {
 	struct sched_param lparam;
 	struct task_struct *p;
+  struct cpumask mask;
+  struct cpumask origin;
+  int min_cpu;
 	int retval;
 
 	if (!param || pid < 0)
@@ -4344,8 +4347,38 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 	rcu_read_lock();
 	retval = -ESRCH;
 	p = find_process_by_pid(pid);
-	if (p != NULL)
+	if (p != NULL) {
+    if (p->policy != SCHED_WRR && 
+        policy == SCHED_WRR && 
+        task_cpu(p) == FORBIDDEN_WRR_QUEUE) {
+      printk("GONGLE: in forbidden cpu\n");
+      cpumask_clear(&mask);
+
+      /* call without rcu_lock (already held) */
+      min_cpu = get_target_cpu(WRR_GET_MIN, 0);
+      printk("GONGLE: min cpu = %d\n", min_cpu);
+      cpumask_set_cpu(min_cpu, &mask);
+
+      if (cpumask_empty(&mask)) {
+        printk("GONGLE: cannot assign\n");
+        rcu_read_unlock();
+        return -EINVAL;
+      }
+
+      cpumask_copy(&origin, &p->cpus_allowed);
+      cpumask_clear_cpu(FORBIDDEN_WRR_QUEUE, &origin);
+      rcu_read_unlock();
+      set_cpus_allowed_ptr(p, &mask);
+      printk("GONGLE: after cpu = %d\n", task_cpu(p));
+
+      /* restore mask */
+      set_cpus_allowed_ptr(p, &origin);
+      rcu_read_lock();
+    } else if (p->policy == SCHED_WRR && policy != SCHED_WRR) {
+      /* from wrr to other */
+    }
 		retval = sched_setscheduler(p, policy, &lparam);
+  }
 	rcu_read_unlock();
 
 	return retval;

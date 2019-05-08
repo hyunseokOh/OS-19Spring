@@ -17,4 +17,7 @@
 #define WRR_GET_MIN 0
 #define WRR_GET_MAX 1
 
+
+extern int get_target_cpu(int flag, int rcu_lock);
+
 #endif

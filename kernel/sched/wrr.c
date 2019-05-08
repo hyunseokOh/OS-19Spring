@@ -6,53 +6,31 @@
 #include <linux/mutex.h>
 #include <linux/irq_work.h>
 
-DEFINE_MUTEX(wrr_lock);
-
-static inline void wrr_rq_lock(struct rq *locked, struct rq *target, struct rq_flags *rt) {
-  /* lock if locked rq and target rq is different */
-  if (locked != target) {
-    printk("GONGLE: acquire lock for diff rq\n");
-    raw_spin_lock_nested(&target->lock, SINGLE_DEPTH_NESTING);
-  }
-}
-
-static inline void wrr_rq_unlock(struct rq *locked, struct rq *target, struct rq_flags *rt) {
-  /* lock if locked rq and target rq is different */
-  if (locked != target) {
-    printk("GONGLE: release lock for diff rq\n");
-    raw_spin_unlock(&target->lock);
-  }
-}
-
-static inline struct wrr_rq *get_wrr_rq(struct rq *rq_, int flag) {
+int get_target_cpu(int flag, int rcu_lock) {
   struct rq *rq;
   struct wrr_rq *wrr_rq;
-  /* 
-   * default retvar is passed rq's wrr_rq since passed rq is online 
-   * If NULL, initialize retvar as NULL (might in load balance?)
-   */
-  struct wrr_rq *retvar = (rq_ == NULL) ? NULL : &rq_->wrr;
+  int cpu = 0, cpu_iter;
   int weight = (flag == WRR_GET_MIN) ? INT_MAX : 0;
-  int i;
-  rcu_read_lock();
-  for_each_online_cpu(i) {
-    if (i == FORBIDDEN_WRR_QUEUE) continue;
-    rq = cpu_rq(i);
+
+  if (rcu_lock) rcu_read_lock();
+  for_each_online_cpu(cpu_iter) {
+    if (cpu_iter == FORBIDDEN_WRR_QUEUE) continue;
+    rq = cpu_rq(cpu_iter);
     wrr_rq = &rq->wrr;
     if (flag == WRR_GET_MIN) {
       if (wrr_rq->weight_sum < weight) {
-        retvar = wrr_rq;
+        cpu = cpu_of(rq);
         weight = wrr_rq->weight_sum;
       }
     } else if (flag == WRR_GET_MAX) {
       if (wrr_rq->weight_sum > weight) {
-        retvar = wrr_rq;
+        cpu = cpu_of(rq);
         weight = wrr_rq->weight_sum;
       }
     }
   }
-  rcu_read_unlock();
-  return retvar;
+  if (rcu_lock) rcu_read_unlock();
+  return cpu;
 }
 
 void init_wrr_rq(struct wrr_rq *wrr_rq) {
@@ -91,25 +69,22 @@ static void enqueue_wrr_entity(struct wrr_rq *wrr_rq, struct sched_wrr_entity *w
 
 static void enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags) {
   struct sched_wrr_entity *wrr_se = &p->wrr;
-  struct rq_flags rf;
-  /*struct wrr_rq *wrr_rq = get_wrr_rq(WRR_GET_MIN);*/
   struct wrr_rq *wrr_rq = &rq->wrr;
   struct rq *min_rq = rq_of_wrr_rq(wrr_rq);
 
   int cpu;
   for_each_cpu(cpu, &p->cpus_allowed) {
     printk("GONGLE; allowed cpu = %d\n", cpu);
-
   }
 
-  /*wrr_rq_lock(rq, min_rq, &rf);*/
+#ifdef CONFIG_GONGLE_DEBUG
   printk("Before enqueue, weight_sum = %d, running = %d cpu = %d\n", wrr_rq->weight_sum, wrr_rq->wrr_nr_running, cpu_of(min_rq));
-	mutex_lock(&wrr_lock);
+#endif
   enqueue_wrr_entity(wrr_rq, wrr_se);
   add_nr_running(min_rq, 1);
-	mutex_unlock(&wrr_lock);
+#ifdef CONFIG_GONGLE_DEBUG
   printk("After enqueue, weight_sum = %d, running = %d cpu = %d\n", wrr_rq->weight_sum, wrr_rq->wrr_nr_running, cpu_of(min_rq));
-  /*wrr_rq_unlock(rq, min_rq, &rf);*/
+#endif
 }
 
 static void dequeue_wrr_entity(struct wrr_rq *wrr_rq, struct sched_wrr_entity *wrr_se) {
@@ -124,16 +99,15 @@ static void dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags) {
   struct sched_wrr_entity *wrr_se = &p->wrr;
   struct wrr_rq* wrr_rq = wrr_rq_of_wrr_se(wrr_se);
   struct rq* min_rq = rq_of_wrr_rq(wrr_rq);
-  struct rq_flags rf;
 
-  /*wrr_rq_lock(rq, min_rq, &rf);*/
+#ifdef CONFIG_GONGLE_DEBUG
   printk("Before dequeue, weight_sum = %d, running = %d, cpu = %d\n", wrr_rq->weight_sum, wrr_rq->wrr_nr_running, cpu_of(min_rq));
-	mutex_lock(&wrr_lock);
+#endif
   dequeue_wrr_entity(wrr_rq, wrr_se);
   sub_nr_running(min_rq, 1);
-	mutex_unlock(&wrr_lock);
+#ifdef CONFIG_GONGLE_DEBUG
   printk("After dequeue, weight_sum = %d, running = %d, cpu = %d\n", wrr_rq->weight_sum, wrr_rq->wrr_nr_running, cpu_of(min_rq));
-  /*wrr_rq_unlock(rq, min_rq, &rf);*/
+#endif
 }
 
 static void requeue_task_wrr(struct rq *rq, int flags) {
@@ -177,7 +151,11 @@ static void put_prev_task_wrr(struct rq *rq, struct task_struct *p) {
 
 #ifdef CONFIG_SMP
 static int select_task_rq_wrr(struct task_struct *p, int task_cpu, int sd_flag, int flags) {
-  return 0;
+  int cpu = get_target_cpu(WRR_GET_MIN, 1);
+#ifdef CONFIG_GONGLE_DEBUG
+  printk("GONGLE: select task_rq_wrr called, assign to %d\n", cpu);
+#endif
+  return cpu;
 }
 static void migrate_task_rq_wrr(struct task_struct *p) {
 }
