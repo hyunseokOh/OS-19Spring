@@ -2203,6 +2203,11 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->rt.on_rq		= 0;
 	p->rt.on_list		= 0;
 
+  INIT_LIST_HEAD(&p->wrr.wrr_node);
+  p->wrr.weight   = current->wrr.weight; /* p is forked by current */
+  p->wrr.time_slice = WRR_TIMESLICE(p->wrr.weight);
+  p->wrr.on_rq    = 0;
+
 #ifdef CONFIG_PREEMPT_NOTIFIERS
 	INIT_HLIST_HEAD(&p->preempt_notifiers);
 #endif
@@ -4051,12 +4056,19 @@ recheck:
 	 * 1..MAX_USER_RT_PRIO-1, valid priority for SCHED_NORMAL,
 	 * SCHED_BATCH and SCHED_IDLE is 0.
 	 */
-	if ((p->mm && attr->sched_priority > MAX_USER_RT_PRIO-1) ||
-	    (!p->mm && attr->sched_priority > MAX_RT_PRIO-1))
-		return -EINVAL;
-	if ((dl_policy(policy) && !__checkparam_dl(attr)) ||
-	    (rt_policy(policy) != (attr->sched_priority != 0)))
-		return -EINVAL;
+
+  /*
+   * Following error checks are related to sched_priority
+   * However, wrr policy does not affect by sched_priority
+   */
+  if (!wrr_policy(policy)) {
+    if ((p->mm && attr->sched_priority > MAX_USER_RT_PRIO-1) ||
+        (!p->mm && attr->sched_priority > MAX_RT_PRIO-1))
+      return -EINVAL;
+    if ((dl_policy(policy) && !__checkparam_dl(attr)) ||
+        (rt_policy(policy) != (attr->sched_priority != 0)))
+      return -EINVAL;
+  }
 
 	/*
 	 * Allow unprivileged RT tasks to decrease priority:
@@ -5060,6 +5072,7 @@ SYSCALL_DEFINE2(sched_set_weight, pid_t, pid, int, weight)
   struct task_struct *p = NULL;
   struct rq *rq = NULL;
   struct rq_flags rf;
+  struct wrr_rq *wrr_rq = NULL;
   kuid_t uid;
   int previous_weight;
   int is_root;
@@ -5085,6 +5098,13 @@ SYSCALL_DEFINE2(sched_set_weight, pid_t, pid, int, weight)
   uid = current_cred()->uid;
   is_root = uid.val == 0;
   previous_weight = p->wrr.weight;
+
+  if (previous_weight == weight) {
+    /* early exit, nothing to do */
+    rcu_read_unlock();
+    return 0;
+  }
+
   if (!is_root) {
     if (!check_same_owner(p)) {
       /* not owner of task */
@@ -5102,6 +5122,9 @@ SYSCALL_DEFINE2(sched_set_weight, pid_t, pid, int, weight)
   rq = task_rq_lock(p, &rf);
   if (p->policy == SCHED_WRR) {
     /* actual modifying goes here */
+    p->wrr.weight = weight;
+    wrr_rq = p->wrr.wrr_rq;
+    wrr_rq->weight_sum += (weight - previous_weight);
     task_rq_unlock(rq, p, &rf);
     rcu_read_unlock();
     return 0;
@@ -5973,7 +5996,7 @@ void __init sched_init(void)
 		init_dl_rq(&rq->dl);
 #ifdef CONFIG_SCHED_WRR
     printk("GONGLE: init wrr rq\n");
-    init_wrr_rq(&rq->wrr, rq);
+    init_wrr_rq(&rq->wrr);
 #endif
 #ifdef CONFIG_FAIR_GROUP_SCHED
 		root_task_group.shares = ROOT_TASK_GROUP_LOAD;

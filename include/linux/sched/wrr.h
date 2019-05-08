@@ -8,7 +8,9 @@
 /* 10 ms */
 #define WRR_BASE_TIMESLICE (10 * HZ / 1000)
 #define WRR_TIMESLICE(weight) (weight * WRR_BASE_TIMESLICE)
+
 #define FORBIDDEN_WRR_QUEUE (NR_CPUS - 1)
+
 #define WRR_REQUEUE_LOAD_BALANCE 0
 #define WRR_REQUEUE_YIELD 1
 

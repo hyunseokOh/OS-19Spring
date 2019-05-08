@@ -594,6 +594,8 @@ void print_sched_wrr_entity(struct seq_file *m, struct sched_wrr_entity *wrr_se)
 
 void print_wrr_rq(struct seq_file *m, int cpu, struct wrr_rq *wrr_rq) {
   SEQ_printf(m, "\nwrr_rq[%d]:\n", cpu);
+  SEQ_printf(m, "  .wrr_nr_running = %u\n", wrr_rq->wrr_nr_running);
+  SEQ_printf(m, "  .wrr_weight_sum = %u\n", wrr_rq->weight_sum);
   struct list_head *head = &wrr_rq->head;
   struct list_head *traverse;
 

@@ -525,7 +525,6 @@ struct wrr_rq {
    * Thus, wrr needs a single queue since it has single priority
    */
   struct list_head head;
-  struct rq *rq;
   unsigned int weight_sum; /* total weight of current wrr_rq */
   unsigned int wrr_nr_running;
 };
@@ -2013,7 +2012,7 @@ print_numa_stats(struct seq_file *m, int node, unsigned long tsf,
 extern void init_cfs_rq(struct cfs_rq *cfs_rq);
 extern void init_rt_rq(struct rt_rq *rt_rq);
 extern void init_dl_rq(struct dl_rq *dl_rq);
-extern void init_wrr_rq(struct wrr_rq *wrr_rq, struct rq *container);
+extern void init_wrr_rq(struct wrr_rq *wrr_rq);
 
 extern void cfs_bandwidth_usage_inc(void);
 extern void cfs_bandwidth_usage_dec(void);

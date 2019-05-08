@@ -3,13 +3,16 @@
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/kernel.h>
+#include <linux/mutex.h>
 #include <linux/irq_work.h>
+
+DEFINE_MUTEX(wrr_lock);
 
 static inline void wrr_rq_lock(struct rq *locked, struct rq *target, struct rq_flags *rt) {
   /* lock if locked rq and target rq is different */
   if (locked != target) {
     printk("GONGLE: acquire lock for diff rq\n");
-    rq_lock(target, rt);
+    raw_spin_lock_nested(&target->lock, SINGLE_DEPTH_NESTING);
   }
 }
 
@@ -17,40 +20,43 @@ static inline void wrr_rq_unlock(struct rq *locked, struct rq *target, struct rq
   /* lock if locked rq and target rq is different */
   if (locked != target) {
     printk("GONGLE: release lock for diff rq\n");
-    rq_unlock(target, rt);
+    raw_spin_unlock(&target->lock);
   }
 }
 
-static inline struct wrr_rq *get_wrr_rq(int flag) {
+static inline struct wrr_rq *get_wrr_rq(struct rq *rq_, int flag) {
   struct rq *rq;
   struct wrr_rq *wrr_rq;
-  struct wrr_rq *result = NULL;
+  /* 
+   * default retvar is passed rq's wrr_rq since passed rq is online 
+   * If NULL, initialize retvar as NULL (might in load balance?)
+   */
+  struct wrr_rq *retvar = (rq_ == NULL) ? NULL : &rq_->wrr;
   int weight = (flag == WRR_GET_MIN) ? INT_MAX : 0;
   int i;
   rcu_read_lock();
-  for_each_possible_cpu(i) {
+  for_each_online_cpu(i) {
     if (i == FORBIDDEN_WRR_QUEUE) continue;
     rq = cpu_rq(i);
     wrr_rq = &rq->wrr;
     if (flag == WRR_GET_MIN) {
       if (wrr_rq->weight_sum < weight) {
-        result = wrr_rq;
+        retvar = wrr_rq;
         weight = wrr_rq->weight_sum;
       }
     } else if (flag == WRR_GET_MAX) {
       if (wrr_rq->weight_sum > weight) {
-        result = wrr_rq;
+        retvar = wrr_rq;
         weight = wrr_rq->weight_sum;
       }
     }
   }
   rcu_read_unlock();
-  return result;
+  return retvar;
 }
 
-void init_wrr_rq(struct wrr_rq *wrr_rq, struct rq *container) {
+void init_wrr_rq(struct wrr_rq *wrr_rq) {
   INIT_LIST_HEAD(&wrr_rq->head);
-  wrr_rq->rq = container;
   wrr_rq->weight_sum = 0;
   wrr_rq->wrr_nr_running = 0;
 }
@@ -60,7 +66,7 @@ static inline int on_wrr_rq(struct sched_wrr_entity *wrr_se) {
 }
 
 static inline struct rq *rq_of_wrr_rq(struct wrr_rq *wrr_rq) {
-  return wrr_rq->rq;
+  return container_of(wrr_rq, struct rq, wrr);
 }
 
 static inline struct rq *rq_of_wrr_se(struct sched_wrr_entity *wrr_se) {
@@ -76,29 +82,40 @@ static inline struct wrr_rq *wrr_rq_of_wrr_se(struct sched_wrr_entity *wrr_se) {
 static void enqueue_wrr_entity(struct wrr_rq *wrr_rq, struct sched_wrr_entity *wrr_se) {
   struct list_head *queue = &wrr_rq->head;
   list_add_tail(&wrr_se->wrr_node, queue);
-  printk("GONGLE: add to tail\n");
   wrr_se->wrr_rq = wrr_rq;
+  wrr_se->on_rq = 1;
+
   wrr_rq->wrr_nr_running++;
   wrr_rq->weight_sum += wrr_se->weight;
-#ifdef CONFIG_SCHED_DEBUG
-  /* when debugging, print queue info after insert */
-#endif
 }
 
 static void enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags) {
   struct sched_wrr_entity *wrr_se = &p->wrr;
   struct rq_flags rf;
-  struct wrr_rq *wrr_rq = get_wrr_rq(WRR_GET_MIN);
+  /*struct wrr_rq *wrr_rq = get_wrr_rq(WRR_GET_MIN);*/
+  struct wrr_rq *wrr_rq = &rq->wrr;
   struct rq *min_rq = rq_of_wrr_rq(wrr_rq);
 
-  wrr_rq_lock(rq, min_rq, &rf);
+  int cpu;
+  for_each_cpu(cpu, &p->cpus_allowed) {
+    printk("GONGLE; allowed cpu = %d\n", cpu);
+
+  }
+
+  /*wrr_rq_lock(rq, min_rq, &rf);*/
+  printk("Before enqueue, weight_sum = %d, running = %d cpu = %d\n", wrr_rq->weight_sum, wrr_rq->wrr_nr_running, cpu_of(min_rq));
+	mutex_lock(&wrr_lock);
   enqueue_wrr_entity(wrr_rq, wrr_se);
   add_nr_running(min_rq, 1);
-  wrr_rq_unlock(rq, min_rq, &rf);
+	mutex_unlock(&wrr_lock);
+  printk("After enqueue, weight_sum = %d, running = %d cpu = %d\n", wrr_rq->weight_sum, wrr_rq->wrr_nr_running, cpu_of(min_rq));
+  /*wrr_rq_unlock(rq, min_rq, &rf);*/
 }
 
 static void dequeue_wrr_entity(struct wrr_rq *wrr_rq, struct sched_wrr_entity *wrr_se) {
   list_del(&wrr_se->wrr_node);
+  wrr_se->on_rq = 0;
+
   wrr_rq->wrr_nr_running--;
   wrr_rq->weight_sum -= wrr_se->weight;
 }
@@ -109,10 +126,14 @@ static void dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags) {
   struct rq* min_rq = rq_of_wrr_rq(wrr_rq);
   struct rq_flags rf;
 
-  wrr_rq_lock(rq, min_rq, &rf);
+  /*wrr_rq_lock(rq, min_rq, &rf);*/
+  printk("Before dequeue, weight_sum = %d, running = %d, cpu = %d\n", wrr_rq->weight_sum, wrr_rq->wrr_nr_running, cpu_of(min_rq));
+	mutex_lock(&wrr_lock);
   dequeue_wrr_entity(wrr_rq, wrr_se);
   sub_nr_running(min_rq, 1);
-  wrr_rq_unlock(rq, min_rq, &rf);
+	mutex_unlock(&wrr_lock);
+  printk("After dequeue, weight_sum = %d, running = %d, cpu = %d\n", wrr_rq->weight_sum, wrr_rq->wrr_nr_running, cpu_of(min_rq));
+  /*wrr_rq_unlock(rq, min_rq, &rf);*/
 }
 
 static void requeue_task_wrr(struct rq *rq, int flags) {
@@ -134,8 +155,22 @@ static void check_preempt_curr_wrr(struct rq *rq, struct task_struct *p, int fla
 }
 
 static struct task_struct *pick_next_task_wrr(struct rq *rq, struct task_struct *prev, struct rq_flags *rf) {
-  return NULL;
+  /*
+   * FIXME (taebum) do we need to use prev and rf?
+   */
+  struct wrr_rq *wrr_rq = &rq->wrr;
+  struct sched_wrr_entity *wrr_se;
+  struct list_head *queue = &wrr_rq->head;
+  struct task_struct *p;
+  if (list_empty(queue)) {
+    return NULL;
+  } else {
+    wrr_se = list_first_entry(queue, struct sched_wrr_entity, wrr_node);
+    p = container_of(wrr_se, struct task_struct, wrr);
+    return p;
+  }
 }
+
 
 static void put_prev_task_wrr(struct rq *rq, struct task_struct *p) {
 }
@@ -160,6 +195,29 @@ static void set_curr_task_wrr(struct rq *rq) {
 }
 
 static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued) {
+
+  /* Implementation mimics the flow of task_tick_rt */
+  struct sched_wrr_entity *wrr_se = &p->wrr;
+  struct wrr_rq *wrr_rq = wrr_se->wrr_rq;
+
+  // Decrement time slice of sched_wrr_entity
+  if(--wrr_se->time_slice) {
+    return; // time slice still remains
+  }
+
+  /*
+   * restore timeslice
+   * modified weight will change timeslice at this moment
+   */
+  wrr_se->time_slice = WRR_TIMESLICE(wrr_se->weight);
+
+  // if there are more than 1 sched_wrr entities in the wrr_rq
+  if (wrr_rq->wrr_nr_running > 1) {
+    
+    // move wrr_se to end of queue and reschedule it
+    list_move_tail(&wrr_se->wrr_node, &rq->wrr.head);
+    resched_curr(rq);
+  }
 }
 
 static void task_fork_wrr(struct task_struct *p) {
@@ -171,6 +229,12 @@ static void task_dead_wrr(struct task_struct *p) {
 static void switched_from_wrr(struct rq *this_rq, struct task_struct *task) {
 }
 static void switched_to_wrr(struct rq *this_rq, struct task_struct *task) {
+  if (task == NULL) {
+    return;
+  }
+  struct sched_wrr_entity *wrr_se = &task->wrr;
+  wrr_se->weight = WRR_DEFAULT_WEIGHT;
+  wrr_se->time_slice = WRR_TIMESLICE(WRR_DEFAULT_WEIGHT);
 }
 static void prio_changed_wrr(struct rq *this_rq, struct task_struct *task, int oldprio) {
 }
