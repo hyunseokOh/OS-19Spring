@@ -2382,6 +2382,7 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 		p->prio = p->normal_prio = __normal_prio(p);
 		set_load_weight(p);
 
+    p->wrr.weight = WRR_DEFAULT_WEIGHT;
 		/*
 		 * We don't need the reset flag anymore after the fork. It has
 		 * fulfilled its duty:
@@ -3972,7 +3973,10 @@ static void __setscheduler_params(struct task_struct *p,
 	 * !rt_policy. Always setting this ensures that things like
 	 * getparam()/getattr() don't report silly values for !rt tasks.
 	 */
-	p->rt_priority = attr->sched_priority;
+  if (!wrr_policy(policy)) {
+    /* prevent arbitrary set when change to SCHED_WRR */
+    p->rt_priority = attr->sched_priority;
+  }
 	p->normal_prio = normal_prio(p);
 	set_load_weight(p);
 }
@@ -3987,13 +3991,13 @@ static void __setscheduler(struct rq *rq, struct task_struct *p,
 	 * Keep a potential priority boosting if called from
 	 * sched_setscheduler().
 	 */
-  if (p->policy == SCHED_WRR) {
+  p->prio = normal_prio(p);
+  if (keep_boost)
+    p->prio = rt_effective_prio(p, p->prio);
+
+  if (wrr_policy(p->policy)) {
     p->sched_class = &wrr_sched_class;
   } else {
-    p->prio = normal_prio(p);
-    if (keep_boost)
-      p->prio = rt_effective_prio(p, p->prio);
-
     if (dl_prio(p->prio))
       p->sched_class = &dl_sched_class;
     else if (rt_prio(p->prio))
@@ -4338,6 +4342,7 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
   struct cpumask origin;
   int min_cpu;
 	int retval;
+  unsigned long flags;
 
 	if (!param || pid < 0)
 		return -EINVAL;
@@ -4351,31 +4356,37 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
     if (p->policy != SCHED_WRR && 
         policy == SCHED_WRR && 
         task_cpu(p) == FORBIDDEN_WRR_QUEUE) {
-      printk("GONGLE: in forbidden cpu\n");
       cpumask_clear(&mask);
 
       /* call without rcu_lock (already held) */
-      min_cpu = get_target_cpu(WRR_GET_MIN, 0);
-      printk("GONGLE: min cpu = %d\n", min_cpu);
-      cpumask_set_cpu(min_cpu, &mask);
-
-      if (cpumask_empty(&mask)) {
-        printk("GONGLE: cannot assign\n");
-        rcu_read_unlock();
+      min_cpu = get_target_cpu(WRR_GET_MIN, 0, p);
+      if (min_cpu == -1 || min_cpu == FORBIDDEN_WRR_QUEUE) {
         return -EINVAL;
       }
+      /*
+      cpumask_set_cpu(min_cpu, &mask);
 
       cpumask_copy(&origin, &p->cpus_allowed);
       cpumask_clear_cpu(FORBIDDEN_WRR_QUEUE, &origin);
+      */
+
+      cpumask_copy(&mask, &p->cpus_allowed);
+      cpumask_clear_cpu(FORBIDDEN_WRR_QUEUE, &mask);
       rcu_read_unlock();
-      set_cpus_allowed_ptr(p, &mask);
-      printk("GONGLE: after cpu = %d\n", task_cpu(p));
+      retval = set_cpus_allowed_ptr(p, &mask);
+      if (retval != 0) {
+        return retval;
+      }
+      rcu_read_lock();
 
       /* restore mask */
-      set_cpus_allowed_ptr(p, &origin);
-      rcu_read_lock();
+      /*set_cpus_allowed_ptr(p, &origin);*/
     } else if (p->policy == SCHED_WRR && policy != SCHED_WRR) {
       /* from wrr to other */
+
+      /*
+       * TODO (taebum) if cpu # 3 is online, re-add to allowed-cpu
+       */
     }
 		retval = sched_setscheduler(p, policy, &lparam);
   }
@@ -6028,7 +6039,6 @@ void __init sched_init(void)
 		init_rt_rq(&rq->rt);
 		init_dl_rq(&rq->dl);
 #ifdef CONFIG_SCHED_WRR
-    printk("GONGLE: init wrr rq\n");
     init_wrr_rq(&rq->wrr);
 #endif
 #ifdef CONFIG_FAIR_GROUP_SCHED

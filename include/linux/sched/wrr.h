@@ -18,6 +18,6 @@
 #define WRR_GET_MAX 1
 
 
-extern int get_target_cpu(int flag, int rcu_lock);
+extern int get_target_cpu(int flag, int rcu_lock, struct task_struct *p);
 
 #endif
