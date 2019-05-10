@@ -6,6 +6,161 @@
 #include <linux/mutex.h>
 #include <linux/irq_work.h>
 
+DEFINE_MUTEX(load_lock); // need to grab lock when updating time
+unsigned long time_balance; // global variable to keep track of time
+// TODO (SH): if necessary, find an appropriate place for initialization
+
+// actual load-balancing function
+static void load_balance_wrr(void) {
+
+  struct rq *rq;
+  struct rq *rq_mix;
+  struct rq *rq_max;
+  struct wrr_rq *wrr_rq;
+  struct task_struct *p;
+
+  int load[NR_CPUS - 1];
+  int cpu;
+  int exist_valid_cpu = 0;
+  int min_cpu=-1;
+  int max_cpu=-1; // initialize to -1
+
+
+  /* TODO (SH): Find proper plce to plce either of the two functions + corresponding enable functions */
+  // local_irq_disable();
+  // preempt_disable(); // local_irq_disable() covers preemption
+
+  rcu_read_lock();
+  // TODO (SH): Verify that this routine is safe even with offine cpus
+  for_each_online_cpu(cpu) {
+    if (cpu == FORBIDDEN_WRR_QUEUE) {
+      continue;
+    }
+
+    // set valid flag to 1
+    if(exist_valid_cpu==0) {
+      ++exist_valid_cpu;
+      min_cpu = cpu;
+      max_cpu = cpu;
+    }
+
+    rq = cpu_rq(cpu);
+    wrr_rq = &rq->wrr;
+
+    load[cpu] = wrr_rq->weight_sum;
+
+    // comparison is valid if there is at least one valid cpu
+    if(exist_valid_cpu){
+      if(load[min_cpu] > load[cpu]) {
+        min_cpu = cpu;
+      }
+     if(load_max_cpu] < load[cpu]) {
+        max_cpu = cpu;
+     }
+    }
+  }
+  rcu_read_unlock();
+
+  // No CPU is available for load balancing
+  if(!exist_valid_cpu) {
+    return;
+  }
+
+  rq_min = cpu_rq(min_cpu);
+  rq_max = cpu_rq(max_cpu);
+
+  // Only One CPU is available - no need for load balancing
+  if (rq_min == rq_max) {
+    return;
+  }
+
+  else {
+    double_rq_lock(rq_min, rq_max);
+
+    // loop over wrr_rq of rq_max to check to find if a task can be migrated
+    struct list_head *traverse;
+    struct list_head *tmp;
+    struct sched_wrr_entity *wrr_se;
+    struct task_struct *p;
+    struct task_struct *task_to_be_migrated = NULL;
+    int weight_of_task_to_be_migrated = 0;
+
+
+    // TODO (SH): check exact syntax of macros
+    list_for_each_safe(traverse, tmp, &rq_max->wrr.head) {
+      wrr_se = container_of(traverse, struct sched_wrr_entity, wrr_node);
+      p = container_of(wrr_se, struct task_struct, wrr);
+
+      /* Migration Condition:
+       * 1. the task should not be runnning
+       * 2. CPU mask check
+       * 3. weight condition check
+       */
+
+      // 1. task should not be currently running
+      if (rq_max->curr == p) {
+        double_rq_unlock(rq_min, rq_max);
+        return;
+      }
+
+      // 2. CPU mask
+      if (cpumask_test_cpu(rq_min->cpu, tsk_cpus_allowed(p)) == 0) {
+        double_rq_unlock(rq_min, rq_max);
+        return;
+      }
+
+      // 3. weight condition
+      if (rq_max->wrr.weight_sum - wrr_se.weight < rq_min->wrr.weight_sum +  wrr_se.weight) {
+        double_rq_unlock(rq_min, rq_max);
+        return;
+      }
+
+      // Migration Condition Satisfied: Compare with current candidate
+      if (task_to_be_migrated==NULL){
+        task_to_be_migrated = p;
+        weight_of_task_to_be_migrated = wrr_se->weight;
+      }
+      else{
+        if (weight_of_task_to_be_migrated < wrr_se->weight) {
+          task_to_be_migrated = p;
+          weight_of_task_to_be_migrated = wrr_se->weight;
+        }
+      }
+
+    }
+
+    if (task_to_be_migrated == NULL) {
+      double_rq_unlock(rq_min, rq_max);
+      return;
+    }
+    // Finally, time for migration
+    else {
+      deactivate_task(rq_max, task_to_be_migrated, 0);
+      set_task_cpu(task_to_be_migrated, rq_min->cpu);
+      activate_task(rq_min, task_to_be_migrated, 0);
+      double_rq_unlock(rq_min, rq_max);
+    }
+
+  }
+
+}
+
+// checks whether 2000ms has passed and calls load_balance if time has expired
+static void trigger_load_balance_wrr(void) {
+  mutex_lock(&load_lock);
+  unsigned long curr_time = time_balance; // Does jiffies get updated even when the code is being executed?
+
+  if (jiffies < time_balance + LOAD_BALANCE_INTERVAL) {
+    mutex_unlock(&load_lock);
+    return;
+  }
+  else {
+    time_balance = curr_time;
+    mutex_unlock(&load_lock);
+    load_balance_wrr(); // is it okay to call it as separate function?
+  }
+}
+
 int get_target_cpu(int flag, int rcu_lock) {
   struct rq *rq;
   struct wrr_rq *wrr_rq;
