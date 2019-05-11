@@ -11,7 +11,7 @@ unsigned long time_balance = 0; // global variable to keep track of time
 
 void printk_all_wrr_rq(void);
 
-// actual load-balancing function
+// actual load-balancing method
 static void load_balance_wrr(void) {
 
   struct rq *rq;
@@ -38,7 +38,6 @@ static void load_balance_wrr(void) {
   // preempt_disable(); // local_irq_disable() covers preemption
 
   rcu_read_lock();
-  // TODO (SH): Verify that this routine is safe even with offine cpus
   for_each_online_cpu(cpu) {
     if (cpu == FORBIDDEN_WRR_QUEUE) {
       continue;
@@ -106,20 +105,15 @@ static void load_balance_wrr(void) {
 
       // 1. task should not be currently running
       if (rq_max->curr == p) {
-        double_rq_unlock(rq_min, rq_max);
-        return;
+        continue;
       }
-
       // 2. CPU mask
       if (cpumask_test_cpu(rq_min->cpu, &(p->cpus_allowed)) == 0) {
-        double_rq_unlock(rq_min, rq_max);
-        return;
+        continue;
       }
-
       // 3. weight condition
       if (rq_max->wrr.weight_sum - wrr_se->weight < rq_min->wrr.weight_sum +  wrr_se->weight) {
-        double_rq_unlock(rq_min, rq_max);
-        return;
+        continue;
       }
 
       // Migration Condition Satisfied: Compare with current candidate
@@ -136,10 +130,12 @@ static void load_balance_wrr(void) {
 
     }
 
+    // End since there is no valid task to be migrated
     if (task_to_be_migrated == NULL) {
       double_rq_unlock(rq_min, rq_max);
       return;
     }
+
     // Finally, time for migration
     else {
 #ifdef CONFIG_GONGLE_DEBUG
@@ -166,7 +162,6 @@ static void load_balance_wrr(void) {
 void trigger_load_balance_wrr(void) {
 
   spin_lock(&load_balance_lock);
-//  unsigned long curr_time = time_balance; // Does jiffies get updated even when the code is being executed?
 
   if (jiffies < time_balance + LOAD_BALANCE_INTERVAL) {
     spin_unlock(&load_balance_lock);
@@ -179,7 +174,7 @@ void trigger_load_balance_wrr(void) {
 #ifdef CONFIG_GONGLE_DEBUG
     printk("GONGLE: load_balance function is called\n");
 #endif
-    load_balance_wrr(); // is it okay to call it as separate function?
+    load_balance_wrr();
   }
 }
 
