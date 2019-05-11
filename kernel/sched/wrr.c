@@ -6,25 +6,32 @@
 #include <linux/mutex.h>
 #include <linux/irq_work.h>
 
-DEFINE_MUTEX(load_lock); // need to grab lock when updating time
-unsigned long time_balance; // global variable to keep track of time
-// TODO (SH): if necessary, find an appropriate place for initialization
+DEFINE_SPINLOCK(load_balance_lock); // need to grab lock when updating time
+unsigned long time_balance = 0; // global variable to keep track of time
+
+void printk_all_wrr_rq(void);
 
 // actual load-balancing function
 static void load_balance_wrr(void) {
 
   struct rq *rq;
-  struct rq *rq_mix;
+  struct rq *rq_min;
   struct rq *rq_max;
   struct wrr_rq *wrr_rq;
-  struct task_struct *p;
 
-  int load[NR_CPUS - 1];
+  int load[NR_CPUS];
   int cpu;
   int exist_valid_cpu = 0;
   int min_cpu=-1;
   int max_cpu=-1; // initialize to -1
 
+
+#ifdef CONFIG_GONGLE_DEBUG
+  printk("BEFORE Load Balancing\n");
+  rcu_read_lock();
+  printk_all_wrr_rq();
+  rcu_read_unlock();
+#endif
 
   /* TODO (SH): Find proper plce to plce either of the two functions + corresponding enable functions */
   // local_irq_disable();
@@ -54,7 +61,7 @@ static void load_balance_wrr(void) {
       if(load[min_cpu] > load[cpu]) {
         min_cpu = cpu;
       }
-     if(load_max_cpu] < load[cpu]) {
+     if(load[max_cpu] < load[cpu]) {
         max_cpu = cpu;
      }
     }
@@ -104,13 +111,13 @@ static void load_balance_wrr(void) {
       }
 
       // 2. CPU mask
-      if (cpumask_test_cpu(rq_min->cpu, tsk_cpus_allowed(p)) == 0) {
+      if (cpumask_test_cpu(rq_min->cpu, &(p->cpus_allowed)) == 0) {
         double_rq_unlock(rq_min, rq_max);
         return;
       }
 
       // 3. weight condition
-      if (rq_max->wrr.weight_sum - wrr_se.weight < rq_min->wrr.weight_sum +  wrr_se.weight) {
+      if (rq_max->wrr.weight_sum - wrr_se->weight < rq_min->wrr.weight_sum +  wrr_se->weight) {
         double_rq_unlock(rq_min, rq_max);
         return;
       }
@@ -135,10 +142,20 @@ static void load_balance_wrr(void) {
     }
     // Finally, time for migration
     else {
+#ifdef CONFIG_GONGLE_DEBUG
+      printk("CAN load balance\n");
+#endif
+
       deactivate_task(rq_max, task_to_be_migrated, 0);
       set_task_cpu(task_to_be_migrated, rq_min->cpu);
       activate_task(rq_min, task_to_be_migrated, 0);
       double_rq_unlock(rq_min, rq_max);
+
+#ifdef CONFIG_GONGLE_DEBUG
+      printk("AFTER Load Balancing\n");
+//      printk_all_wrr_rq();
+#endif
+
     }
 
   }
@@ -146,17 +163,22 @@ static void load_balance_wrr(void) {
 }
 
 // checks whether 2000ms has passed and calls load_balance if time has expired
-static void trigger_load_balance_wrr(void) {
-  mutex_lock(&load_lock);
-  unsigned long curr_time = time_balance; // Does jiffies get updated even when the code is being executed?
+void trigger_load_balance_wrr(void) {
+
+  spin_lock(&load_balance_lock);
+//  unsigned long curr_time = time_balance; // Does jiffies get updated even when the code is being executed?
 
   if (jiffies < time_balance + LOAD_BALANCE_INTERVAL) {
-    mutex_unlock(&load_lock);
+    spin_unlock(&load_balance_lock);
     return;
   }
   else {
-    time_balance = curr_time;
-    mutex_unlock(&load_lock);
+    time_balance = jiffies;
+    spin_unlock(&load_balance_lock);
+
+#ifdef CONFIG_GONGLE_DEBUG
+    printk("GONGLE: load_balance function is called\n");
+#endif
     load_balance_wrr(); // is it okay to call it as separate function?
   }
 }
@@ -419,6 +441,33 @@ const struct sched_class wrr_sched_class = {
 void printk_sched_wrr_entity(struct sched_wrr_entity *wrr_se) {
   printk("GONGLE: [weight = %u, time_slice = %u, on_rq = %u\n",
       wrr_se->weight, wrr_se->time_slice, (unsigned int) wrr_se->on_rq);
+}
+
+void printk_wrr_rq(int cpu) {
+  struct wrr_rq *wrr_rq = &cpu_rq(cpu)->wrr;
+
+  printk("\nwrr_rq[%d]:\n", cpu);
+  printk("  .wrr_nr_running = %u\n", wrr_rq->wrr_nr_running);
+  printk("  .wrr_weight_sum = %u\n", wrr_rq->weight_sum);
+
+  struct list_head *head = &wrr_rq->head;
+  struct list_head *traverse;
+
+  struct sched_wrr_entity *wrr_se;
+  list_for_each(traverse, head) {
+    wrr_se = container_of(traverse, struct sched_wrr_entity, wrr_node);
+    printk_sched_wrr_entity(wrr_se);
+  }
+}
+
+void printk_all_wrr_rq(void) {
+  int cpu;
+  for_each_online_cpu(cpu) {
+    if (cpu == FORBIDDEN_WRR_QUEUE) {
+      continue;
+    }
+    printk_wrr_rq(cpu);
+  }
 }
 
 void print_wrr_stats(struct seq_file *m, int cpu) {
