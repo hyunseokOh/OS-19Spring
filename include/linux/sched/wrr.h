@@ -19,6 +19,6 @@
 
 #define LOAD_BALANCE_INTERVAL (2000 * HZ / 1000)
 
-extern int get_target_cpu(int flag, int rcu_lock);
+extern int get_target_cpu(int flag, int rcu_lock, struct task_struct *p);
 
 #endif

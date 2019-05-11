@@ -183,15 +183,44 @@ void trigger_load_balance_wrr(void) {
   }
 }
 
-int get_target_cpu(int flag, int rcu_lock) {
+void print_wrr_entity_local(struct sched_wrr_entity *wrr_se) {
+  struct task_struct *p = container_of(wrr_se, struct task_struct, wrr);
+  printk("GONGLE: entity [pid = %d], weight = %d, on_rq = %d, time_slice = %d\n", p->pid, wrr_se->weight, wrr_se->on_rq, wrr_se->time_slice);
+
+}
+
+void print_wrr_rq_local(struct wrr_rq *wrr_rq) {
+  struct list_head *traverse;
+  struct list_head *head = &wrr_rq->head;
+  struct sched_wrr_entity *wrr_se;
+  struct rq *rq = container_of(wrr_rq, struct rq, wrr);
+  printk("GONGLE: wrr_rq [%d] weight_sum = %d, nr_running = %d\n", cpu_of(rq), wrr_rq->weight_sum, wrr_rq->wrr_nr_running);
+  list_for_each(traverse, head) {
+    wrr_se = container_of(traverse, struct sched_wrr_entity, wrr_node);
+    print_wrr_entity_local(wrr_se);
+  }
+  printk("GONGLE: wrr_rq print finished\n");
+}
+
+int get_target_cpu(int flag, int rcu_lock, struct task_struct *p) {
   struct rq *rq;
   struct wrr_rq *wrr_rq;
-  int cpu = 0, cpu_iter;
+  struct cpumask mask;
+  int cpu, cpu_iter;
   int weight = (flag == WRR_GET_MIN) ? INT_MAX : 0;
+
+  if (p != NULL) {
+    cpumask_copy(&mask, &p->cpus_allowed);
+    cpu = task_cpu(p); /* keep current cpu */
+  } else {
+    cpumask_full(&mask);
+    cpu = -1; /* cannot assign */
+  }
 
   if (rcu_lock) rcu_read_lock();
   for_each_online_cpu(cpu_iter) {
     if (cpu_iter == FORBIDDEN_WRR_QUEUE) continue;
+    if (!cpumask_test_cpu(cpu_iter, &mask)) continue;
     rq = cpu_rq(cpu_iter);
     wrr_rq = &rq->wrr;
     if (flag == WRR_GET_MIN) {
@@ -230,6 +259,9 @@ static inline struct rq *rq_of_wrr_se(struct sched_wrr_entity *wrr_se) {
   return rq_of_wrr_rq(wrr_rq);
 }
 
+static void update_curr_wrr(struct rq *rq) {
+}
+
 static inline struct wrr_rq *wrr_rq_of_wrr_se(struct sched_wrr_entity *wrr_se) {
   return wrr_se->wrr_rq;
 }
@@ -239,6 +271,7 @@ static void enqueue_wrr_entity(struct wrr_rq *wrr_rq, struct sched_wrr_entity *w
   list_add_tail(&wrr_se->wrr_node, queue);
   wrr_se->wrr_rq = wrr_rq;
   wrr_se->on_rq = 1;
+  wrr_se->time_slice = WRR_TIMESLICE(wrr_se->weight);
 
   wrr_rq->wrr_nr_running++;
   wrr_rq->weight_sum += wrr_se->weight;
@@ -247,21 +280,11 @@ static void enqueue_wrr_entity(struct wrr_rq *wrr_rq, struct sched_wrr_entity *w
 static void enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags) {
   struct sched_wrr_entity *wrr_se = &p->wrr;
   struct wrr_rq *wrr_rq = &rq->wrr;
-  struct rq *min_rq = rq_of_wrr_rq(wrr_rq);
+  
+  BUG_ON(cpu_of(rq) == FORBIDDEN_WRR_QUEUE);
 
-  int cpu;
-  for_each_cpu(cpu, &p->cpus_allowed) {
-    printk("GONGLE; allowed cpu = %d\n", cpu);
-  }
-
-#ifdef CONFIG_GONGLE_DEBUG
-  printk("Before enqueue, weight_sum = %d, running = %d cpu = %d\n", wrr_rq->weight_sum, wrr_rq->wrr_nr_running, cpu_of(min_rq));
-#endif
   enqueue_wrr_entity(wrr_rq, wrr_se);
-  add_nr_running(min_rq, 1);
-#ifdef CONFIG_GONGLE_DEBUG
-  printk("After enqueue, weight_sum = %d, running = %d cpu = %d\n", wrr_rq->weight_sum, wrr_rq->wrr_nr_running, cpu_of(min_rq));
-#endif
+  add_nr_running(rq, 1);
 }
 
 static void dequeue_wrr_entity(struct wrr_rq *wrr_rq, struct sched_wrr_entity *wrr_se) {
@@ -275,16 +298,9 @@ static void dequeue_wrr_entity(struct wrr_rq *wrr_rq, struct sched_wrr_entity *w
 static void dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags) {
   struct sched_wrr_entity *wrr_se = &p->wrr;
   struct wrr_rq* wrr_rq = wrr_rq_of_wrr_se(wrr_se);
-  struct rq* min_rq = rq_of_wrr_rq(wrr_rq);
 
-#ifdef CONFIG_GONGLE_DEBUG
-  printk("Before dequeue, weight_sum = %d, running = %d, cpu = %d\n", wrr_rq->weight_sum, wrr_rq->wrr_nr_running, cpu_of(min_rq));
-#endif
   dequeue_wrr_entity(wrr_rq, wrr_se);
-  sub_nr_running(min_rq, 1);
-#ifdef CONFIG_GONGLE_DEBUG
-  printk("After dequeue, weight_sum = %d, running = %d, cpu = %d\n", wrr_rq->weight_sum, wrr_rq->wrr_nr_running, cpu_of(min_rq));
-#endif
+  sub_nr_running(rq, 1);
 }
 
 static void requeue_task_wrr(struct rq *rq, int flags) {
@@ -302,7 +318,6 @@ static bool yield_to_task_wrr(struct rq *rq, struct task_struct *p, bool preempt
 }
 
 static void check_preempt_curr_wrr(struct rq *rq, struct task_struct *p, int flags) {
-
 }
 
 static struct task_struct *pick_next_task_wrr(struct rq *rq, struct task_struct *prev, struct rq_flags *rf) {
@@ -316,6 +331,7 @@ static struct task_struct *pick_next_task_wrr(struct rq *rq, struct task_struct 
   if (list_empty(queue)) {
     return NULL;
   } else {
+    put_prev_task(rq, prev);
     wrr_se = list_first_entry(queue, struct sched_wrr_entity, wrr_node);
     p = container_of(wrr_se, struct task_struct, wrr);
     return p;
@@ -328,11 +344,7 @@ static void put_prev_task_wrr(struct rq *rq, struct task_struct *p) {
 
 #ifdef CONFIG_SMP
 static int select_task_rq_wrr(struct task_struct *p, int task_cpu, int sd_flag, int flags) {
-  int cpu = get_target_cpu(WRR_GET_MIN, 1);
-#ifdef CONFIG_GONGLE_DEBUG
-  printk("GONGLE: select task_rq_wrr called, assign to %d\n", cpu);
-#endif
-  return cpu;
+  return get_target_cpu(WRR_GET_MIN, 1, p);
 }
 static void migrate_task_rq_wrr(struct task_struct *p) {
 }
@@ -350,13 +362,18 @@ static void set_curr_task_wrr(struct rq *rq) {
 }
 
 static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued) {
-
   /* Implementation mimics the flow of task_tick_rt */
   struct sched_wrr_entity *wrr_se = &p->wrr;
   struct wrr_rq *wrr_rq = wrr_se->wrr_rq;
 
+  BUG_ON(wrr_rq != &rq->wrr);
+
+  if (!wrr_policy(p->policy)) {
+    return;
+  }
+
   // Decrement time slice of sched_wrr_entity
-  if(--wrr_se->time_slice) {
+  if (--wrr_se->time_slice) {
     return; // time slice still remains
   }
 
@@ -370,7 +387,7 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued) {
   if (wrr_rq->wrr_nr_running > 1) {
     
     // move wrr_se to end of queue and reschedule it
-    list_move_tail(&wrr_se->wrr_node, &rq->wrr.head);
+    list_move_tail(&wrr_se->wrr_node, &wrr_rq->head);
     resched_curr(rq);
   }
 }
@@ -396,8 +413,7 @@ static void prio_changed_wrr(struct rq *this_rq, struct task_struct *task, int o
 static unsigned int get_rr_interval_wrr(struct rq *rq, struct task_struct *task) {
   return 0;
 }
-static void update_curr_wrr(struct rq *rq) {
-}
+
 #ifdef CONFIG_FAIR_GROUP_SCHED
 static void task_change_group_wrr(struct task_struct *p, int type) {
 }
@@ -415,7 +431,7 @@ const struct sched_class wrr_sched_class = {
   .select_task_rq = select_task_rq_wrr,
   .migrate_task_rq = migrate_task_rq_wrr,
   .task_woken = task_woken_wrr,
-  .set_cpus_allowed = set_cpus_allowed_wrr,
+  .set_cpus_allowed = set_cpus_allowed_common,
   .rq_online = rq_online_wrr,
   .rq_offline = rq_offline_wrr,
 #endif
