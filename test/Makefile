@@ -5,8 +5,10 @@ FORK = simple_fork.c
 IO = io.c
 SLEEP = sleep.c
 SIMPLE = simple_change.c
+TEST = test.c
 
-all: error fork io sleep simple
+all: error fork io sleep simple test
+	cp copy2user.sh ./bin
 
 error: $(ERR)
 	$(CC) $(ERR) -o ./bin/$@
@@ -22,6 +24,9 @@ sleep: $(SLEEP)
 
 simple: $(SIMPLE)
 	$(CC) $(SIMPLE) -o ./bin/$@
+
+test: $(TEST)
+	$(CC) $(TEST) -o ./bin/$@ -lpthread
 
 clean:
 	rm ./bin/*

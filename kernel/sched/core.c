@@ -4339,10 +4339,7 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 	struct sched_param lparam;
 	struct task_struct *p;
   struct cpumask mask;
-  struct cpumask origin;
-  int min_cpu;
 	int retval;
-  unsigned long flags;
 
 	if (!param || pid < 0)
 		return -EINVAL;
@@ -4353,40 +4350,49 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 	retval = -ESRCH;
 	p = find_process_by_pid(pid);
 	if (p != NULL) {
-    if (p->policy != SCHED_WRR && 
-        policy == SCHED_WRR && 
-        task_cpu(p) == FORBIDDEN_WRR_QUEUE) {
-      cpumask_clear(&mask);
+    if (!wrr_policy(p->policy) && wrr_policy(policy)) {
+      /* from other policy to wrr_policy */
 
-      /* call without rcu_lock (already held) */
-      min_cpu = get_target_cpu(WRR_GET_MIN, 0, p);
-      if (min_cpu == -1 || min_cpu == FORBIDDEN_WRR_QUEUE) {
-        return -EINVAL;
+      if (cpumask_test_cpu(FORBIDDEN_WRR_QUEUE, &p->cpus_allowed)) {
+        if (cpumask_weight(&p->cpus_allowed) == 1) {
+          /* only forbidden cpu allowed (cannot change) */
+          rcu_read_unlock();
+          return -EINVAL;
+        } else {
+          /* back-up the info that forbidden was allowed before */
+          atomic_set(&p->forbidden_allowed, 1);
+        }
       }
-      /*
-      cpumask_set_cpu(min_cpu, &mask);
-
-      cpumask_copy(&origin, &p->cpus_allowed);
-      cpumask_clear_cpu(FORBIDDEN_WRR_QUEUE, &origin);
-      */
 
       cpumask_copy(&mask, &p->cpus_allowed);
       cpumask_clear_cpu(FORBIDDEN_WRR_QUEUE, &mask);
+
+      /* Prevent p going away */
+      get_task_struct(p);
       rcu_read_unlock();
       retval = set_cpus_allowed_ptr(p, &mask);
+      put_task_struct(p);
       if (retval != 0) {
         return retval;
       }
       rcu_read_lock();
-
-      /* restore mask */
-      /*set_cpus_allowed_ptr(p, &origin);*/
-    } else if (p->policy == SCHED_WRR && policy != SCHED_WRR) {
+    } else if (wrr_policy(p->policy) && !wrr_policy(policy)) {
       /* from wrr to other */
+      if (atomic_read(&p->forbidden_allowed)) {
+        /* forbidden queue was previously allowed */
+        cpumask_copy(&mask, &p->cpus_allowed);
+        cpumask_set_cpu(FORBIDDEN_WRR_QUEUE, &mask);
 
-      /*
-       * TODO (taebum) if cpu # 3 is online, re-add to allowed-cpu
-       */
+        get_task_struct(p);
+        rcu_read_unlock();
+        retval = set_cpus_allowed_ptr(p, &mask);
+        put_task_struct(p);
+        if (retval != 0) {
+          return retval;
+        }
+        rcu_read_lock();
+        atomic_set(&p->forbidden_allowed, 0);
+      }
     }
 		retval = sched_setscheduler(p, policy, &lparam);
   }
@@ -4746,7 +4752,15 @@ long sched_setaffinity(pid_t pid, const struct cpumask *in_mask)
 			goto out_free_new_mask;
 		}
 		rcu_read_unlock();
-	}
+	} else if (task_has_wrr_policy(p)) {
+    /* zero out forbidden */
+    cpumask_clear_cpu(FORBIDDEN_WRR_QUEUE, new_mask);
+    if (cpumask_weight(new_mask) == 0) {
+      /* empty cpu */
+      retval = -EINVAL;
+      goto out_free_new_mask;
+    }
+  }
 #endif
 again:
 	retval = __set_cpus_allowed_ptr(p, new_mask, true);
@@ -5164,6 +5178,7 @@ SYSCALL_DEFINE2(sched_set_weight, pid_t, pid, int, weight)
 
   /* follow locking logic of sched_rr_get_interval */
   rq = task_rq_lock(p, &rf);
+	update_rq_clock(rq);
   if (p->policy == SCHED_WRR) {
     /* actual modifying goes here */
     p->wrr.weight = weight;

@@ -35,6 +35,7 @@ int get_target_cpu(int flag, int rcu_lock, struct task_struct *p) {
   if (p != NULL) {
     cpumask_copy(&mask, &p->cpus_allowed);
     cpu = task_cpu(p); /* keep current cpu */
+    if (cpu == FORBIDDEN_WRR_QUEUE) cpu = -1;
   } else {
     cpumask_full(&mask);
     cpu = -1; /* cannot assign */
@@ -68,6 +69,12 @@ void init_wrr_rq(struct wrr_rq *wrr_rq) {
   wrr_rq->wrr_nr_running = 0;
 }
 
+static inline void requeue_task_wrr(struct rq *rq, int flags) {
+  /* set first element to become tail */
+  struct wrr_rq *wrr_rq = &rq->wrr;
+  list_rotate_left(&wrr_rq->head);
+}
+
 static inline int on_wrr_rq(struct sched_wrr_entity *wrr_se) {
   return wrr_se->on_rq;
 }
@@ -91,45 +98,48 @@ static inline struct wrr_rq *wrr_rq_of_wrr_se(struct sched_wrr_entity *wrr_se) {
 
 static void enqueue_wrr_entity(struct wrr_rq *wrr_rq, struct sched_wrr_entity *wrr_se) {
   struct list_head *queue = &wrr_rq->head;
+  struct rq *rq = rq_of_wrr_rq(wrr_rq);
+
   list_add_tail(&wrr_se->wrr_node, queue);
   wrr_se->wrr_rq = wrr_rq;
   wrr_se->on_rq = 1;
-  wrr_se->time_slice = WRR_TIMESLICE(wrr_se->weight);
 
   wrr_rq->wrr_nr_running++;
   wrr_rq->weight_sum += wrr_se->weight;
+
+  add_nr_running(rq, 1);
 }
 
 static void enqueue_task_wrr(struct rq *rq, struct task_struct *p, int flags) {
   struct sched_wrr_entity *wrr_se = &p->wrr;
   struct wrr_rq *wrr_rq = &rq->wrr;
+
+  if (wrr_se->on_rq == 1) return;
   
   BUG_ON(cpu_of(rq) == FORBIDDEN_WRR_QUEUE);
 
   enqueue_wrr_entity(wrr_rq, wrr_se);
-  add_nr_running(rq, 1);
 }
 
 static void dequeue_wrr_entity(struct wrr_rq *wrr_rq, struct sched_wrr_entity *wrr_se) {
+  struct rq *rq = rq_of_wrr_rq(wrr_rq);
+
   list_del(&wrr_se->wrr_node);
   wrr_se->on_rq = 0;
 
   wrr_rq->wrr_nr_running--;
   wrr_rq->weight_sum -= wrr_se->weight;
+
+  sub_nr_running(rq, 1);
 }
 
 static void dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags) {
   struct sched_wrr_entity *wrr_se = &p->wrr;
   struct wrr_rq* wrr_rq = wrr_rq_of_wrr_se(wrr_se);
 
-  dequeue_wrr_entity(wrr_rq, wrr_se);
-  sub_nr_running(rq, 1);
-}
+  if (wrr_se->on_rq == 0) return;
 
-static void requeue_task_wrr(struct rq *rq, int flags) {
-  /* set first element to become tail */
-  struct wrr_rq *wrr_rq = &rq->wrr;
-  list_rotate_left(&wrr_rq->head);
+  dequeue_wrr_entity(wrr_rq, wrr_se);
 }
 
 static void yield_task_wrr(struct rq *rq) {
@@ -173,7 +183,10 @@ static void migrate_task_rq_wrr(struct task_struct *p) {
 }
 static void task_woken_wrr(struct rq *this_rq, struct task_struct *task) {
 }
-static void set_cpus_allowed_wrr(struct task_struct *p, const struct cpumask *newmask) {
+static void set_cpus_allowed_wrr(struct task_struct *p, const struct cpumask *new_mask) {
+  /* set cpu allowed, but clear FORBIDDEN_CPU for wrr */
+  set_cpus_allowed_common(p, new_mask);
+  cpumask_clear_cpu(FORBIDDEN_WRR_QUEUE, &p->cpus_allowed);
 }
 static void rq_online_wrr(struct rq *rq) {
 }
@@ -207,8 +220,7 @@ static void task_tick_wrr(struct rq *rq, struct task_struct *p, int queued) {
   wrr_se->time_slice = WRR_TIMESLICE(wrr_se->weight);
 
   // if there are more than 1 sched_wrr entities in the wrr_rq
-  if (wrr_rq->wrr_nr_running > 1) {
-    
+  if (wrr_se->wrr_node.next != &wrr_rq->head) {
     // move wrr_se to end of queue and reschedule it
     list_move_tail(&wrr_se->wrr_node, &wrr_rq->head);
     resched_curr(rq);
@@ -223,16 +235,17 @@ static void task_dead_wrr(struct task_struct *p) {
 
 static void switched_from_wrr(struct rq *this_rq, struct task_struct *task) {
 }
+
 static void switched_to_wrr(struct rq *this_rq, struct task_struct *task) {
-  if (task == NULL) {
-    return;
-  }
   struct sched_wrr_entity *wrr_se = &task->wrr;
-  wrr_se->weight = WRR_DEFAULT_WEIGHT;
+
+  /* just refill time slice */
   wrr_se->time_slice = WRR_TIMESLICE(WRR_DEFAULT_WEIGHT);
 }
+
 static void prio_changed_wrr(struct rq *this_rq, struct task_struct *task, int oldprio) {
 }
+
 static unsigned int get_rr_interval_wrr(struct rq *rq, struct task_struct *task) {
   return 0;
 }
@@ -254,7 +267,7 @@ const struct sched_class wrr_sched_class = {
   .select_task_rq = select_task_rq_wrr,
   .migrate_task_rq = migrate_task_rq_wrr,
   .task_woken = task_woken_wrr,
-  .set_cpus_allowed = set_cpus_allowed_common,
+  .set_cpus_allowed = set_cpus_allowed_wrr,
   .rq_online = rq_online_wrr,
   .rq_offline = rq_offline_wrr,
 #endif
