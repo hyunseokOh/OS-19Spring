@@ -18,6 +18,7 @@ static void load_balance_wrr(void) {
   struct rq *rq_min;
   struct rq *rq_max;
   struct wrr_rq *wrr_rq;
+  unsigned long flags;
 
   int load[NR_CPUS];
   int cpu;
@@ -25,17 +26,8 @@ static void load_balance_wrr(void) {
   int min_cpu=-1;
   int max_cpu=-1; // initialize to -1
 
-
-#ifdef CONFIG_GONGLE_DEBUG
-  printk("BEFORE Load Balancing\n");
-  rcu_read_lock();
-  printk_all_wrr_rq();
-  rcu_read_unlock();
-#endif
-
-  /* TODO (SH): Find proper plce to plce either of the two functions + corresponding enable functions */
-  // local_irq_disable();
-  // preempt_disable(); // local_irq_disable() covers preemption
+  // referenced from yield_to method in core.c
+  local_irq_save(flags); // saves interrupt delivery after saving current interrupt flags
 
   rcu_read_lock();
   for_each_online_cpu(cpu) {
@@ -56,7 +48,7 @@ static void load_balance_wrr(void) {
     load[cpu] = wrr_rq->weight_sum;
 
     // comparison is valid if there is at least one valid cpu
-    if(exist_valid_cpu){
+    if(exist_valid_cpu==1){
       if(load[min_cpu] > load[cpu]) {
         min_cpu = cpu;
       }
@@ -68,7 +60,11 @@ static void load_balance_wrr(void) {
   rcu_read_unlock();
 
   // No CPU is available for load balancing
-  if(!exist_valid_cpu) {
+  if(exist_valid_cpu==0) {
+#ifdef CONFIG_GONGLE_DEBUG
+       printk("\tNO CPU is available for load balancing\n");
+#endif
+    local_irq_restore(flags);
     return;
   }
 
@@ -77,6 +73,10 @@ static void load_balance_wrr(void) {
 
   // Only One CPU is available - no need for load balancing
   if (rq_min == rq_max) {
+#ifdef CONFIG_GONGLE_DEBUG
+       printk("\tOnly 1 CPU is available for load balancing\n");
+#endif
+    local_irq_restore(flags);
     return;
   }
 
@@ -91,8 +91,6 @@ static void load_balance_wrr(void) {
     struct task_struct *task_to_be_migrated = NULL;
     int weight_of_task_to_be_migrated = 0;
 
-
-    // TODO (SH): check exact syntax of macros
     list_for_each_safe(traverse, tmp, &rq_max->wrr.head) {
       wrr_se = container_of(traverse, struct sched_wrr_entity, wrr_node);
       p = container_of(wrr_se, struct task_struct, wrr);
@@ -105,14 +103,23 @@ static void load_balance_wrr(void) {
 
       // 1. task should not be currently running
       if (rq_max->curr == p) {
+#ifdef CONFIG_GONGLE_DEBUG
+       printk("\tThe task is currently running\n");
+#endif
         continue;
       }
       // 2. CPU mask
       if (cpumask_test_cpu(rq_min->cpu, &(p->cpus_allowed)) == 0) {
+#ifdef CONFIG_GONGLE_DEBUG
+        printk("\tThe task's cpu mask restricts the migration\n");
+#endif
         continue;
       }
       // 3. weight condition
       if (rq_max->wrr.weight_sum - wrr_se->weight < rq_min->wrr.weight_sum +  wrr_se->weight) {
+#ifdef CONFIG_GONGLE_DEBUG
+        printk("\tThe weight condition is not met\n");
+#endif
         continue;
       }
 
@@ -133,25 +140,29 @@ static void load_balance_wrr(void) {
     // End since there is no valid task to be migrated
     if (task_to_be_migrated == NULL) {
       double_rq_unlock(rq_min, rq_max);
+      local_irq_restore(flags);
       return;
     }
 
     // Finally, time for migration
     else {
 #ifdef CONFIG_GONGLE_DEBUG
-      printk("CAN load balance\n");
+      printk("CAN Load Balance\n");
+//      printk_all_wrr_rq();
 #endif
 
       deactivate_task(rq_max, task_to_be_migrated, 0);
       set_task_cpu(task_to_be_migrated, rq_min->cpu);
       activate_task(rq_min, task_to_be_migrated, 0);
+
       double_rq_unlock(rq_min, rq_max);
+      local_irq_restore(flags);
 
 #ifdef CONFIG_GONGLE_DEBUG
-      printk("AFTER Load Balancing\n");
+      printk("FINISHED Load Balancing\n");
 //      printk_all_wrr_rq();
 #endif
-
+      return;
     }
 
   }
@@ -473,12 +484,17 @@ void printk_wrr_rq(int cpu) {
 
 void printk_all_wrr_rq(void) {
   int cpu;
+
+  rcu_read_lock();
+
   for_each_online_cpu(cpu) {
     if (cpu == FORBIDDEN_WRR_QUEUE) {
       continue;
     }
     printk_wrr_rq(cpu);
   }
+
+  rcu_read_unlock();
 }
 
 void print_wrr_stats(struct seq_file *m, int cpu) {
