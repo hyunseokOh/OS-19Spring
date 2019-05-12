@@ -131,6 +131,9 @@ config SCHED_WRR
 config GONGLE_DEBUG
   def_bool y
 
+config WRR_BALANCE_TEST
+  def_bool n
+
 config 64BIT
 	def_bool y
 

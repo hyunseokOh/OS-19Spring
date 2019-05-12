@@ -6,6 +6,12 @@
 #include <linux/mutex.h>
 #include <linux/irq_work.h>
 
+
+#ifdef CONFIG_WRR_BALANCE_TEST
+DEFINE_MUTEX(coin_lock);
+int coin = 0;
+#endif
+
 void print_wrr_entity_local(struct sched_wrr_entity *wrr_se) {
   struct task_struct *p = container_of(wrr_se, struct task_struct, wrr);
   printk("GONGLE: entity [pid = %d], weight = %d, on_rq = %d, time_slice = %d\n", p->pid, wrr_se->weight, wrr_se->on_rq, wrr_se->time_slice);
@@ -69,7 +75,7 @@ void init_wrr_rq(struct wrr_rq *wrr_rq) {
   wrr_rq->wrr_nr_running = 0;
 }
 
-static inline void requeue_task_wrr(struct rq *rq, int flags) {
+static inline void requeue_task_wrr(struct rq *rq) {
   /* set first element to become tail */
   struct wrr_rq *wrr_rq = &rq->wrr;
   list_rotate_left(&wrr_rq->head);
@@ -143,7 +149,7 @@ static void dequeue_task_wrr(struct rq *rq, struct task_struct *p, int flags) {
 }
 
 static void yield_task_wrr(struct rq *rq) {
-  requeue_task_wrr(rq, WRR_REQUEUE_YIELD);
+  requeue_task_wrr(rq);
 }
 
 static bool yield_to_task_wrr(struct rq *rq, struct task_struct *p, bool preempt) {
@@ -177,6 +183,13 @@ static void put_prev_task_wrr(struct rq *rq, struct task_struct *p) {
 
 #ifdef CONFIG_SMP
 static int select_task_rq_wrr(struct task_struct *p, int task_cpu, int sd_flag, int flags) {
+#ifdef CONFIG_WRR_BALANCE_TEST
+  int retval;
+  mutex_lock(&coin_lock);
+  retval = coin++ % 2;
+  mutex_unlock(&coin_lock);
+  return retval;
+#endif
   return get_target_cpu(WRR_GET_MIN, 1, p);
 }
 static void migrate_task_rq_wrr(struct task_struct *p) {

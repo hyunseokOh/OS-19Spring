@@ -7,8 +7,9 @@ SLEEP = sleep.c
 SIMPLE = simple_change.c
 TRIAL = trial.c
 RANDOM = random.c
+BALANCE = balance.c
 
-all: error fork io sleep simple trial random
+all: error fork io sleep simple trial random balance
 	cp copy2user.sh ./bin
 
 error: $(ERR)
@@ -27,10 +28,13 @@ simple: $(SIMPLE)
 	$(CC) $(SIMPLE) -o ./bin/$@
 
 trial: $(TRIAL)
-	$(CC) $(TRIAL) -o ./bin/$@ -lpthread
+	$(CC) $(TRIAL) -o ./bin/$@
 
 random: $(RANDOM)
-	$(CC) $(RANDOM) -o ./bin/$@ -lpthread
+	$(CC) $(RANDOM) -o ./bin/$@
+
+balance: $(BALANCE)
+	$(CC) $(BALANCE) -o ./bin/$@
 
 clean:
 	rm ./bin/*

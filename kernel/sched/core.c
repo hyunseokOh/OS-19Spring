@@ -5118,6 +5118,52 @@ void io_schedule(void)
 EXPORT_SYMBOL(io_schedule);
 
 /**
+ * sys_sched_get_balance - get weight of each wrr_rq
+ * This is implemented for monitoring load balance effects
+ *
+ * @weights: array to store value
+ * @size: array size
+ *
+ * Return: On success, return 0. Each weight_sum will be written in weights
+ * On failuer, negative error code will be returned
+ */
+SYSCALL_DEFINE2(sched_get_balance, int *, weights, int, size)
+{
+  int bf[NR_CPUS - 1];
+  int retval = 0;
+  int cpu;
+  int i;
+  struct rq *rq;
+  struct wrr_rq *wrr_rq;
+  
+  if (size < NR_CPUS - 1) {
+    return -EINVAL;
+  }
+
+  for (i = 0; i < NR_CPUS - 1; i++) {
+    bf[i] = 0;
+  }
+
+  rcu_read_lock();
+  for_each_online_cpu(cpu) {
+    if (cpu == FORBIDDEN_WRR_QUEUE) continue;
+    rq = cpu_rq(cpu);
+    wrr_rq = &rq->wrr;
+    bf[cpu] = wrr_rq->weight_sum;
+  }
+  rcu_read_unlock();
+
+  for (i = 0; i < NR_CPUS - 1; i++) {
+    if (copy_to_user(weights + i, bf + i, sizeof(int))) {
+      retval = -EFAULT;
+      break;
+    }
+  }
+
+  return retval;
+}
+
+/**
  * sys_sched_set_weight - set weight for the target process (with pid)
  * if pid == 0, set the weight for the calling process
  * @weight: weighted round robin scheduler weight

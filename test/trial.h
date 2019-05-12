@@ -7,8 +7,10 @@
 #define TARGET 499999991
 #define ITER 1000
 #define SCHED_WRR 7
+#define CPUS 3
 #define SET_WEIGHT_NUM 398
 #define GET_WEIGHT_NUM 399
+#define GET_EACH_WEIGHT 400
 
 #include <sched.h>
 #include <stdio.h>
@@ -138,6 +140,15 @@ void set_wrr_weight(pid_t pid, int weight) {
   syscallResult = syscall(SET_WEIGHT_NUM, 0, weight);
   if (syscallResult == -1) {
     printf("Error in set weight! exit...\n");
+    exit(1);
+  }
+}
+
+void get_each_weight(int *weights) {
+  int syscallResult;
+  syscallResult = syscall(GET_EACH_WEIGHT, weights, CPUS);
+  if (syscallResult == -1) {
+    printf("Error in get each weight! exit...\n");
     exit(1);
   }
 }
