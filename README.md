@@ -11,8 +11,10 @@
 
 ## Modified/Implemented Functions
 
+### Except `kernel/sched/wrr.c`
+
 1. `arch/arm64/Kconfig`
-    - Add `CONFIG_SCHED_WRR` and `CONFIG_GONGLE_DEBUG`
+    - Add `CONFIG_SCHED_WRR`, `CONFIG_GONGLE_DEBUG`, `CONFIG_WRR_BALANCE_TEST`
 2. `arch/arm64/include/asm/{unistd.h,unistd32.h}`, `include/inlux/syscalls.h`
     - syscall related (easy now :smile:)
 3. `include/uapi/linux/sched.h`
@@ -49,12 +51,72 @@
     - syscall implementation
 16. `sys_sched_get_weight` in `kernel/sched/core.c`
     - syscall implementation
-17. `sched_init` in `kernel/sched/core.c`
+17. `sys_sched_get_balance` in `kernel/sched/core.c`
+    - extra syscall implementation (not in project specification)
+    - For getting each cpu's `wrr_rq`'s weight to the user space
+18. `sched_init` in `kernel/sched/core.c`
     - Insert `init_wrr_rq`
-18. `include/linux/shced/wrr.h`
+19. `include/linux/shced/wrr.h`
     - Useful MACROS for `SCHED_WRR`
 
-## How to Keep the Single wrr_rq Empty
+### `kernel/sched/wrr.c`
+
+It does not contain debug-related functions and some trivial functions.
+
+1. `get_target_cpu`
+    - Get cpu number whose `wrr_rq`'s weight sum is min/max
+2. `init_wrr_rq`
+    - Initialize given `wrr_rq`
+3. `requeue_task`
+    - move head node of the `wrr_rq` to tail of queue
+4. `enqueue_task_wrr` and `enqueue_wrr_entity`
+    - Enqueue given task into `wrr_rq`
+5. `dequeue_task_wrr` and `dequeue_wrr_entity`
+    - Dequeue given task from `wrr_rq`
+6. `pick_next_task_wrr`
+    - Called from scheduler, when it tries to find the next task to run
+    - Return `NULL` if current `wrr_rq` of `rq` is empty
+    - Return head of `wrr_rq` if current `wrr_rq` of `rq` is not empty (and call `put_prev_task` for prev task)
+7. `select_task_rq_wrr`
+    - Deciding which CPU a task should be assigned to (min weight sum)
+8. `set_cpus_allowed_wrr`
+    - Change `cpus_allowed` of given task
+    - Prevent `FORBIDDEN_WRR_QUEUE` be set
+9. `task_tick_wrr`
+    - Called from `scheduler_tick`
+    - Decrease time slice, and requeue & reschedule task if time slice becomes zero
+    
+## How to Keep the Single `wrr_rq` Empty
+
+In the specification, it says that
+> Tasks will manually be switched to use `SCHED_WRR` using system call `sched_setscheduler()`.  
+
+We assumed that it denotes `sched_setscheduler` system call is the only way to change sched policy of task.  
+Moreover, we investigated that assigned cpu could be modified via system call `sched_setaffinity()`.  
+Thus, we modified both system calls' logic as follows.
+
+### `sched_setscheduler`
+
+For `sched_setscheduler`, the call stack becomes
+```
+sys_sched_setscheduler
+do_sched_setscheduler
+sched_setscheduler
+_sched_setscheduler
+__sched_setscheduler
+...
+```
+We modified `do_sched_setscheduler` function.  
+It checks whether scheduler policy becomes `Other -> SCHED_WRR` or `SCHED_WRR -> Other`.  
+The former case, if `FORBIDDEN_WRR_QUEUE` is allowed for current task, it masks out that cpu number via `set_cpus_allowed_ptr`.  
+Moreover, it saves information that `FORBIDDEN_WRR_QUEUE` was allowed for this task before scheduler policy conversion in `forbidden_allowed` field of `struct task_struct`.  
+However, if `FORBIDDEN_WRR_QUEUE` is the only allowed cpu for given task, it returns error (cannot change sched policy).  
+The latter case, it makes `FORBIDDEN_WRR_QUEUE` allowed if `forbidden_allowed` of task is 1 (true).
+
+### `sched_setaffinity`
+
+If current task's policy is `SCHED_WRR`, it masks out `FORBIDDEN_WRR_QUEUE` from `new_mask`.  
+After that, if `new_mask`'s weight is 0 (no cpu in mask), it returns error (cannot set affinity).
 
 # Investigate
 
@@ -103,13 +165,32 @@ The following test names are based on executable binary files
 5. `fork`
     - Check fork task
     - It forks 3 times after conversion of sched policy to `SCHED_WRR`, and run factorization task
-6. `test`
+6. `trial`
     - One of the main test
     - It takes two command line args, `nproc` and `equal_weight`
-    - `./test 10 1` means
+    - `./trial 10 1` means
         - Fork 10 child processes
         - Each process have equal weights
     - It iterates over weight value from `1` to `20`
     - At each weight value, it checks elapsed time (in real time, not cpu time) of the last child process
+    - It checks elapsed time for 10 iterations, and writes the result into text file (filename becomes `trial_$(nproc)_$(equal_weight).txt`)
+7. `random`
+    - One of the main test
+    - It takes single command line args, `nproc`
+    - `./random 10` means
+        - Fork 10 child processes
+    - It iterates over weight value from `1` to `20`
+    - At each weight value, it checks elapsed time (in real time, not cpu time) of the last child process
+    - It checks elapsed time for 10 iterations, and writes the result into text file (filename becomes `random_$(nproc).txt`)
+    - Difference between `trial` and `random` is `random` test set other processes' weight as random number
+8. `balance`
+    - One of the main test
+    - It takes single command line args, `nproc`
+    - `./balance 10` means
+        - Test `balance` with 10 child processes fork
+    - It records balance factor of each `wrr_rq` every second (using extra system call `sched_get_balance`)
+    - It writes the balance factor history into text file (filename becomoes `balance_$(nproc).txt`)
     
 ## Test Results
+
+
