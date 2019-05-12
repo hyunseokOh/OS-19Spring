@@ -29,18 +29,32 @@
     - Modify `valid_policy` to check `SCHED_WRR`
     - Add `wrr` to `struct rq`
 8. `__sched_fork` in `kernel/sched/core.c`
+    - Init `struct list_head wrr_node`
+    - Set weight, time_slice
 9. `sched_fork` in `kernel/sched/core.c`
+    - If `sched_reset_on_fork == 1` set `wrr` weight as default weight
+    - If policy is `SCHED_WRR`, set `wrr_sched_class` as `sched_class`
 10. `__setscheduler` in `kernel/sched/core.c`
-11. `__sched_setscheduler` in `kernel/sched/core.c`
-12. `do_sched_setscheduler` in `kernel/sched/core.c`
-13. `sched_setaffinity` in `kernel/sched/core.c`
-14. `sys_sched_set_weight` in `kernel/sched/core.c`
-15. `sys_sched_get_weight` in `kernel/sched/core.c`
-16. `sched_init` in `kernel/sched/core.c`
-17. `include/linux/shced/wrr.h`
+    - If policy is `SCHED_WRR`, set `wrr_sched_class` as `sched_class`
+11. `__setscheduler_params` in `kernel/sched/core.c`
+    - Do not modify `rt_priority` if `policy == SCHED_WRR`
+12. `__sched_setscheduler` in `kernel/sched/core.c`
+    - If policy is `SCHED_WRR`, do not check contition which is related to `sched_priority`
+    - `sched_setscheduler` should work independently of `sched_priority`
+13. `do_sched_setscheduler` in `kernel/sched/core.c`
+    - Handle `FORBIDDEN_WRR_QUEUE`
+14. `sched_setaffinity` in `kernel/sched/core.c`
+    - Handle `FORBIDDEN_WRR_QUEUE`
+15. `sys_sched_set_weight` in `kernel/sched/core.c`
+    - syscall implementation
+16. `sys_sched_get_weight` in `kernel/sched/core.c`
+    - syscall implementation
+17. `sched_init` in `kernel/sched/core.c`
+    - Insert `init_wrr_rq`
+18. `include/linux/shced/wrr.h`
     - Useful MACROS for `SCHED_WRR`
 
-## How to Keep the Single wrr_rq Empty (CPU 3 of rpi3)
+## How to Keep the Single wrr_rq Empty
 
 # Investigate
 
