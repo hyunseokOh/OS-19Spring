@@ -12,23 +12,189 @@ DEFINE_MUTEX(coin_lock);
 int coin = 0;
 #endif
 
-void print_wrr_entity_local(struct sched_wrr_entity *wrr_se) {
-  struct task_struct *p = container_of(wrr_se, struct task_struct, wrr);
-  printk("GONGLE: entity [pid = %d], weight = %d, on_rq = %d, time_slice = %d\n", p->pid, wrr_se->weight, wrr_se->on_rq, wrr_se->time_slice);
+/* cannot use mutex_lock in scheduler related functions */
+DEFINE_SPINLOCK(load_balance_lock); // need to grab lock when updating time
+unsigned long old_jiffies = 0;
 
+// actual load-balancing method
+static void load_balance_wrr(void) {
+  struct rq *rq;
+  struct rq *rq_min;
+  struct rq *rq_max;
+  struct wrr_rq *wrr_rq;
+  unsigned long flags;
+
+  int load[NR_CPUS];
+  int cpu;
+  int running_wrr = 0;
+
+  int min_cpu = -1;
+  int max_cpu = -1;
+
+  /* for migration */
+  struct list_head *traverse;
+  struct sched_wrr_entity *wrr_se;
+  struct task_struct *p;
+  struct task_struct *migrate_task = NULL;
+  int migrate_task_weight = 0;
+
+  rcu_read_lock();
+  for_each_online_cpu(cpu) {
+    if (cpu == FORBIDDEN_WRR_QUEUE) {
+      continue;
+    }
+
+    /* first touch */
+    if (min_cpu == -1) min_cpu = cpu;
+    if (max_cpu == -1) max_cpu = cpu;
+
+    rq = cpu_rq(cpu);
+    wrr_rq = &rq->wrr;
+
+    load[cpu] = wrr_rq->weight_sum;
+    running_wrr += wrr_rq->wrr_nr_running;
+
+    // comparison is valid if there is at least one valid cpu
+    if (min_cpu != -1 && load[min_cpu] > load[cpu]) {
+      min_cpu = cpu;
+    }
+
+    if (max_cpu != -1 && load[max_cpu] < load[cpu]) {
+      max_cpu = cpu;
+    }
+  }
+  rcu_read_unlock();
+
+  // Only One CPU is available - no need for load balancing
+  if (min_cpu == max_cpu) {
+#ifdef CONFIG_GONGLE_DEBUG
+    printk("\tOnly 1 CPU is available for load balancing (or all weights are equal)\n");
+#endif
+    return;
+  }
+
+  // No CPU is available for load balancing
+  if(min_cpu == -1 || max_cpu == -1) {
+#ifdef CONFIG_GONGLE_DEBUG
+    printk("\tNO CPU is available for load balancing\n");
+#endif
+    return;
+  }
+
+  if (running_wrr == 1) {
+    /* needless to move if just single task is running among all wrr_rq */
+    return;
+  }
+
+  /* get rq */
+  rq_min = cpu_rq(min_cpu);
+  rq_max = cpu_rq(max_cpu);
+
+  // referenced from yield_to method in core.c
+  // saves interrupt delivery after saving current interrupt flags
+  local_irq_save(flags);
+  double_rq_lock(rq_min, rq_max);
+
+  // loop over wrr_rq of rq_max to check to find if a task can be migrated
+  list_for_each(traverse, &rq_max->wrr.head) {
+    wrr_se = container_of(traverse, struct sched_wrr_entity, wrr_node);
+    p = container_of(wrr_se, struct task_struct, wrr);
+
+    /* 
+     * Migration Condition:
+     * 1. the task should not be runnning
+     * 2. CPU mask check
+     * 3. weight condition check
+     */
+
+    // 1. task should not be currently running
+    if (rq_max->curr == p) {
+#ifdef CONFIG_GONGLE_DEBUG
+     printk("\tThe task is currently running\n");
+#endif
+      continue;
+    }
+
+    // 2. CPU mask
+    if (cpumask_test_cpu(min_cpu, &(p->cpus_allowed)) == 0) {
+#ifdef CONFIG_GONGLE_DEBUG
+      printk("\tThe task's cpu mask restricts the migration\n");
+#endif
+      continue;
+    }
+
+    // 3. weight condition
+    if (rq_max->wrr.weight_sum - wrr_se->weight < rq_min->wrr.weight_sum +  wrr_se->weight) {
+#ifdef CONFIG_GONGLE_DEBUG
+      printk("\tThe weight condition is not met\n");
+#endif
+      continue;
+    }
+
+    // Migration Condition Satisfied: Compare with current candidate
+    if (migrate_task == NULL){
+      /* first searched */
+      migrate_task = p;
+      migrate_task_weight = wrr_se->weight;
+    } else{
+      /* already have one */
+      if (migrate_task_weight < wrr_se->weight) {
+        /* we can do tighter load balance */
+        migrate_task = p;
+        migrate_task_weight = wrr_se->weight;
+      }
+    }
+
+    if (migrate_task == NULL) {
+      // End since there is no valid task to be migrated
+      double_rq_unlock(rq_min, rq_max);
+      local_irq_restore(flags);
+      return;
+    }
+
+    // Finally, time for migration
+#ifdef CONFIG_GONGLE_DEBUG
+    printk("CAN Load Balance\n");
+#endif
+    deactivate_task(rq_max, migrate_task, 0);
+    set_task_cpu(migrate_task, min_cpu);
+    activate_task(rq_min, migrate_task, 0);
+
+    double_rq_unlock(rq_min, rq_max);
+    local_irq_restore(flags);
+#ifdef CONFIG_GONGLE_DEBUG
+    printk("FINISHED Load Balancing\n");
+#endif
+    return;
+  }
 }
 
-void print_wrr_rq_local(struct wrr_rq *wrr_rq) {
-  struct list_head *traverse;
-  struct list_head *head = &wrr_rq->head;
-  struct sched_wrr_entity *wrr_se;
-  struct rq *rq = container_of(wrr_rq, struct rq, wrr);
-  printk("GONGLE: wrr_rq [%d] weight_sum = %d, nr_running = %d\n", cpu_of(rq), wrr_rq->weight_sum, wrr_rq->wrr_nr_running);
-  list_for_each(traverse, head) {
-    wrr_se = container_of(traverse, struct sched_wrr_entity, wrr_node);
-    print_wrr_entity_local(wrr_se);
+static inline int on_null_domain(struct rq *rq)
+{
+  /* got from kernel/sched/fair.c */
+	return unlikely(!rcu_dereference_sched(rq->sd));
+}
+
+// checks whether 2000ms has passed and calls load_balance if time has expired
+void trigger_load_balance_wrr(struct rq *rq) {
+  /*
+   * jiffies overflow ref:
+   *  https://stackoverflow.com/questions/8206762/how-does-linux-handle-overflow-in-jiffies
+   */
+  if (unlikely(on_null_domain(rq))) return;
+
+  spin_lock(&load_balance_lock);
+  if (time_before(jiffies, old_jiffies + LOAD_BALANCE_INTERVAL)) {
+    spin_unlock(&load_balance_lock);
+    return;
+  } else {
+    old_jiffies = jiffies;
+    spin_unlock(&load_balance_lock);
+#ifdef CONFIG_GONGLE_DEBUG
+    printk("GONGLE: load_balance function is called\n");
+#endif
+    load_balance_wrr();
   }
-  printk("GONGLE: wrr_rq print finished\n");
 }
 
 int get_target_cpu(int flag, int rcu_lock, struct task_struct *p) {
@@ -43,14 +209,13 @@ int get_target_cpu(int flag, int rcu_lock, struct task_struct *p) {
     cpu = task_cpu(p); /* keep current cpu */
     if (cpu == FORBIDDEN_WRR_QUEUE) cpu = -1;
   } else {
-    cpumask_full(&mask);
     cpu = -1; /* cannot assign */
   }
 
   if (rcu_lock) rcu_read_lock();
   for_each_online_cpu(cpu_iter) {
     if (cpu_iter == FORBIDDEN_WRR_QUEUE) continue;
-    if (!cpumask_test_cpu(cpu_iter, &mask)) continue;
+    if (p != NULL && !cpumask_test_cpu(cpu_iter, &mask)) continue;
     rq = cpu_rq(cpu_iter);
     wrr_rq = &rq->wrr;
     if (flag == WRR_GET_MIN) {
@@ -160,13 +325,11 @@ static void check_preempt_curr_wrr(struct rq *rq, struct task_struct *p, int fla
 }
 
 static struct task_struct *pick_next_task_wrr(struct rq *rq, struct task_struct *prev, struct rq_flags *rf) {
-  /*
-   * FIXME (taebum) do we need to use prev and rf?
-   */
   struct wrr_rq *wrr_rq = &rq->wrr;
   struct sched_wrr_entity *wrr_se;
   struct list_head *queue = &wrr_rq->head;
   struct task_struct *p;
+
   if (list_empty(queue)) {
     return NULL;
   } else {
@@ -184,13 +347,15 @@ static void put_prev_task_wrr(struct rq *rq, struct task_struct *p) {
 #ifdef CONFIG_SMP
 static int select_task_rq_wrr(struct task_struct *p, int task_cpu, int sd_flag, int flags) {
 #ifdef CONFIG_WRR_BALANCE_TEST
+  /* just coin flip between cpu 0 and 1 (force assign) */
   int retval;
   mutex_lock(&coin_lock);
   retval = coin++ % 2;
   mutex_unlock(&coin_lock);
   return retval;
-#endif
+#else
   return get_target_cpu(WRR_GET_MIN, 1, p);
+#endif
 }
 static void migrate_task_rq_wrr(struct task_struct *p) {
 }
@@ -306,6 +471,37 @@ const struct sched_class wrr_sched_class = {
 void printk_sched_wrr_entity(struct sched_wrr_entity *wrr_se) {
   printk("GONGLE: [weight = %u, time_slice = %u, on_rq = %u\n",
       wrr_se->weight, wrr_se->time_slice, (unsigned int) wrr_se->on_rq);
+}
+
+void printk_wrr_rq(int cpu) {
+  struct wrr_rq *wrr_rq = &cpu_rq(cpu)->wrr;
+  struct list_head *head = &wrr_rq->head;
+  struct list_head *traverse;
+  struct sched_wrr_entity *wrr_se;
+
+  printk("\nwrr_rq[%d]:\n", cpu);
+  printk("  .wrr_nr_running = %u\n", wrr_rq->wrr_nr_running);
+  printk("  .wrr_weight_sum = %u\n", wrr_rq->weight_sum);
+
+  list_for_each(traverse, head) {
+    wrr_se = container_of(traverse, struct sched_wrr_entity, wrr_node);
+    printk_sched_wrr_entity(wrr_se);
+  }
+}
+
+void printk_all_wrr_rq(void) {
+  int cpu;
+
+  rcu_read_lock();
+
+  for_each_online_cpu(cpu) {
+    if (cpu == FORBIDDEN_WRR_QUEUE) {
+      continue;
+    }
+    printk_wrr_rq(cpu);
+  }
+
+  rcu_read_unlock();
 }
 
 void print_wrr_stats(struct seq_file *m, int cpu) {

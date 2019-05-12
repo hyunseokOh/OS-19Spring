@@ -9,10 +9,10 @@
 #include <wait.h>
 #include "trial.h"
 
-#define SECONDS 10
+#define SECONDS 5
 
 void do_work(void) {
-  /* loop for 25 seconds */
+  /* loop for SECONDS */
   struct timeval start, end;
   gettimeofday(&start, NULL);
   while (1) {
@@ -33,6 +33,7 @@ int main(int argc, char *argv[]) {
   int weights[CPUS];
   double total_weights;
   double balance_factor[CPUS];
+  double elapsed;
 
   if (argc != 2) {
     return -1;
@@ -42,7 +43,6 @@ int main(int argc, char *argv[]) {
   pids = (pid_t *) malloc(sizeof(pid_t) * nproc);
   snprintf(filename, sizeof(filename), "balance_%d.txt", nproc);
 
-  set_sched_wrr(0);
   for (int i = 0; i < nproc; i++) {
     pids[i] = fork();
     if (pids[i] == 0) {
@@ -51,12 +51,18 @@ int main(int argc, char *argv[]) {
         fpr = fopen(filename, "w");
         gettimeofday(&start, NULL);
         checkpoint.tv_sec = start.tv_sec;
+        checkpoint.tv_usec = start.tv_usec;
         while(1) {
           gettimeofday(&end, NULL);
-          /* every 0.5 seconds */
           if (end.tv_sec - start.tv_sec > SECONDS) break;
-          if ((double) (end.tv_sec - checkpoint.tv_sec) > 0.5) {
+          /* every seconds (safely) */
+
+          elapsed = (double) (end.tv_usec - checkpoint.tv_usec) / 1000000 + (double) (end.tv_sec - checkpoint.tv_sec);
+          elapsed *= 1000;
+          if (elapsed > 200) {
+            /* at every 0.2 seconds */
             checkpoint.tv_sec = end.tv_sec;
+            checkpoint.tv_usec = end.tv_usec;
             get_each_weight(weights);
             total_weights = 0;
             for (int j = 0; j < CPUS; j++) {
@@ -79,6 +85,10 @@ int main(int argc, char *argv[]) {
       } else {
         do_work();
         return 0;
+      }
+    } else {
+      if (i == 0) {
+        set_sched_wrr(0);
       }
     }
   }

@@ -128,8 +128,11 @@ config ARM64
 config SCHED_WRR
   def_bool y
 
-config GONGLE_DEBUG
+config WRR_LOAD_BALANCE
   def_bool y
+
+config GONGLE_DEBUG
+  def_bool n
 
 config WRR_BALANCE_TEST
   def_bool n

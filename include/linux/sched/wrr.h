@@ -14,6 +14,7 @@
 #define WRR_GET_MIN 0
 #define WRR_GET_MAX 1
 
+#define LOAD_BALANCE_INTERVAL (2000 * HZ / 1000)
 
 extern int get_target_cpu(int flag, int rcu_lock, struct task_struct *p);
 
