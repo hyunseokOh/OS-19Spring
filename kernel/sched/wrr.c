@@ -123,8 +123,8 @@ static void load_balance_wrr(void) {
       continue;
     }
 
-    // 3. weight condition
-    if (rq_max->wrr.weight_sum - wrr_se->weight < rq_min->wrr.weight_sum +  wrr_se->weight) {
+    // 3. weight condition: migration should not cause the weight of RQ_MIN to become "bigger than or equal to" RQ_MAX
+    if (rq_max->wrr.weight_sum - wrr_se->weight <= rq_min->wrr.weight_sum +  wrr_se->weight) {
 #ifdef CONFIG_GONGLE_DEBUG
       printk("\tThe weight condition is not met\n");
 #endif
