@@ -4413,20 +4413,12 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
         /* failed to set sched policy to wrr */
         if (atomic_read(&p->forbidden_allowed)) {
           /* restore */
-          retval = set_forbidden(p);
-          if (retval != 0) {
-            rcu_read_unlock();
-            return retval;
-          }
+          set_forbidden(p);
           atomic_set(&p->forbidden_allowed, 0);
         }
       } else if (wrr_policy(p->policy) && !wrr_policy(policy)) {
         /* failed to set sched policy from wrr */
-        retval = clear_forbidden(p);
-        if (retval != 0) {
-          rcu_read_unlock();
-          return retval;
-        }
+        clear_forbidden(p);
       }
     }
   }
