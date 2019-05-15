@@ -71,7 +71,9 @@ We added some custom configuration in `arch/arm64/Kconfig` as
     - For getting each cpu's `wrr_rq`'s weight to the user space
 17. `sched_init` in `kernel/sched/core.c`
     - Insert `init_wrr_rq`
-18. `include/linux/shced/wrr.h`
+18. `scheduler_tick` in `kernel/sched/core.c`
+    - Calls `trigger_load_balance_wrr`
+19. `include/linux/shced/wrr.h`
     - Useful MACROS for `SCHED_WRR`
 
 #### `kernel/sched/wrr.c` implementation
@@ -100,7 +102,14 @@ It does not contain debug-related functions and some trivial functions.
 9. `task_tick_wrr`
     - Called from `scheduler_tick`
     - Decrease time slice, and requeue & reschedule task if time slice becomes zero
-    
+10. `trigger_load_balance_wrr`
+    - Called from `scheduler_tick`
+    - Checks if 2000ms has passed, and calls `load_balance_wrr` if condition is met.
+11. `load_balance_wrr`
+    - Called from `trigger_load_balance_wrr`
+    - Checks migration conditions (find MIN/MAX rq, whether task is running, cpu mask, weight condition) and migrate if conditions are met.
+
+
 ### How to Keep the Single `wrr_rq` Empty
 
 In the specification, it says that
