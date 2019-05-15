@@ -197,7 +197,8 @@ The following test names are based on executable binary files
         - Each process have equal weights
     - It iterates over weight value from `1` to `20`
     - At each weight value, it checks elapsed time (in real time, not cpu time) of the last child process
-    - It checks elapsed time for 10 iterations, and writes the result into text file (filename becomes `trial_$(nproc)_$(equal_weight).txt`)
+    - It checks elapsed time for 10 iterations, and writes the result into text file (filename becomes `trial_$(nproc)_$(equal_weight).txt`
+    - `trial_std` is same test, but it does not write into file. It writes into `stdout` (for demo)
 7. `random`
     - One of the main test
     - It takes single command line args, `nproc`
@@ -214,14 +215,15 @@ The following test names are based on executable binary files
         - Test `balance` with 10 child processes fork
     - It records balance factor of each `wrr_rq` every second (using extra system call `sched_get_balance`)
     - It writes the balance factor history into text file (filename becomes `balance_$(nproc).txt`)
+    - `balance_std` is same test, but it does not write into file. It writes into `stdout` (for demo)
     
 ### Test Results
 
+See [plot.pdf](plot.pdf)
 
 ## Lessons Learned
 - Current schedulers in Linux have been highly optimized.
 - We have to face hundreds of issues to add a new scheduler policy.
 - Ctags and cscope are inevitable.
-- A single line can save the world.
+- A single line of code can save the world.
 - If you know your kernel and know yourself, you will not be imperiled in a hundred projects.
-- I'm Groot.
