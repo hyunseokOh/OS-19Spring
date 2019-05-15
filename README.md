@@ -161,7 +161,9 @@ Then all executable binary files are generated in `test/bin`, so now you can jus
 The following test names are based on executable binary files
 1. `simple`
     - Check simple conversion of sched policy to `SCHED_WRR`
-    - It converts sched policy via `sched_setscheduler`, and calls `sched_get_weight`
+    - It converts sched policy via `sched_setscheduler`
+    - It calls `sys_sched_set_weight` and set task's weight as 20
+    - Finally, it calls `sched_get_weight`
 2. `io`
     - Check simple conversion of sched policy to `SCHED_WRR` + I/O task
     - It converts sched policy and waits for I/O (`getchar()`)
@@ -200,7 +202,6 @@ The following test names are based on executable binary files
     - It checks elapsed time for 10 iterations, and writes the result into text file (filename becomes `trial_$(nproc)_$(equal_weight).txt`
     - `trial_std` is same test, but it does not write into file. It writes into `stdout` (for demo)
 7. `random`
-    - One of the main test
     - It takes single command line args, `nproc`
     - `./random 10` means
         - Fork 10 child processes
