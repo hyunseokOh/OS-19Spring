@@ -4344,6 +4344,8 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 	struct sched_param lparam;
 	struct task_struct *p;
   struct cpumask mask;
+  struct cpumask min_mask; /* mask for min cpu */
+  int min_cpu;
 	int retval;
 
 	if (!param || pid < 0)
@@ -4355,6 +4357,7 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 	retval = -ESRCH;
 	p = find_process_by_pid(pid);
 	if (p != NULL) {
+    retval = 0;
     if (!wrr_policy(p->policy) && wrr_policy(policy)) {
       /* from other policy to wrr_policy */
 
@@ -4372,10 +4375,26 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
       cpumask_copy(&mask, &p->cpus_allowed);
       cpumask_clear_cpu(FORBIDDEN_WRR_QUEUE, &mask);
 
-      /* Prevent p going away */
+      if (task_cpu(p) == FORBIDDEN_WRR_QUEUE) {
+        // task in forbidden cpu
+        // try to assign to min_weight cpu (force assign) 
+        cpumask_clear(&min_mask);
+        min_cpu = get_target_cpu(WRR_GET_MIN, 0, p);
+
+        if (min_cpu != -1) {
+          cpumask_set_cpu(min_cpu, &min_mask);
+          // Prevent p going away 
+          get_task_struct(p);
+          rcu_read_unlock();
+          retval = __set_cpus_allowed_ptr(p, &min_mask, true);
+          put_task_struct(p);
+          rcu_read_lock();
+        }
+      }
+
       get_task_struct(p);
       rcu_read_unlock();
-      retval = set_cpus_allowed_ptr(p, &mask);
+      retval = __set_cpus_allowed_ptr(p, &mask, true);
       put_task_struct(p);
       if (retval != 0) {
         return retval;

@@ -153,4 +153,12 @@ void get_each_weight(int *weights) {
   }
 }
 
+double elapsed_time(struct timeval *from, struct timeval *to) {
+  /* calculate elapsed time in ms unit */
+  double elapsed;
+
+  elapsed = (double) (to->tv_usec - from->tv_usec) / 1000000 + (double) (to->tv_sec - from->tv_sec);
+  return elapsed * 1000;
+}
+
 #endif
