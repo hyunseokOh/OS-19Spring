@@ -220,7 +220,7 @@ The following test names are based on executable binary files
 
 ## Lessons Learned
 - Current schedulers in Linux have been highly optimized.
-- There are hundreds of issues to add a new scheduler policy.
+- We have to face hundreds of issues to add a new scheduler policy.
 - Ctags and cscope are inevitable.
 - A single line can save the world.
 - If you know your kernel and know yourself, you will not be imperiled in a hundred projects.
