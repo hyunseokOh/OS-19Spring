@@ -30,7 +30,7 @@ We added some custom configuration in `arch/arm64/Kconfig` as
 
 #### Except `kernel/sched/wrr.c`
 
-1. `arch/arm64/include/asm/{unistd.h,unistd32.h}`, `include/inlux/syscalls.h`
+1. `arch/arm64/include/asm/{unistd.h,unistd32.h}`, `include/linux/syscalls.h`
     - syscall related (easy now :smile:)
 2. `include/uapi/linux/sched.h`
     - Define `SCHED_WRR 7`
@@ -38,7 +38,7 @@ We added some custom configuration in `arch/arm64/Kconfig` as
     - Add `struct sched_wrr_entity`
     - Add `sched_wrr_entity` and `forbidden_allowed` field to `task_struct`
 4. `INIT_TASK` of `include/linux/init_task.h`
-    - Default `sched_wrr_entity` setting fof `init_task` (all tasks forked from this)
+    - Default `sched_wrr_entity` setting for `init_task` (all tasks forked from this)
 5. `rt_sched_class` in `kernel/sched/rt.c`
     - Set `.next` as `&wrr_sched_class` if `CONFIG_SCHED_WRR` is active
 6. `kernel/sched/sched.h`
@@ -56,7 +56,7 @@ We added some custom configuration in `arch/arm64/Kconfig` as
 10. `__setscheduler_params` in `kernel/sched/core.c`
     - Do not modify `rt_priority` if `policy == SCHED_WRR`
 11. `__sched_setscheduler` in `kernel/sched/core.c`
-    - If policy is `SCHED_WRR`, do not check contition which is related to `sched_priority`
+    - If policy is `SCHED_WRR`, do not check condition which is related to `sched_priority`
     - `sched_setscheduler` should work independently of `sched_priority`
 12. `do_sched_setscheduler` in `kernel/sched/core.c`
     - Handle `FORBIDDEN_WRR_QUEUE`
@@ -72,7 +72,7 @@ We added some custom configuration in `arch/arm64/Kconfig` as
 17. `sched_init` in `kernel/sched/core.c`
     - Insert `init_wrr_rq`
 18. `scheduler_tick` in `kernel/sched/core.c`
-    - Calls `trigger_load_balance_wrr`
+    - Call `trigger_load_balance_wrr` if `CONFIG_SCHED_WRR` and `CONFIG_WRR_LOAD_BALANCE` are active
 19. `include/linux/shced/wrr.h`
     - Useful MACROS for `SCHED_WRR`
 
@@ -104,10 +104,10 @@ It does not contain debug-related functions and some trivial functions.
     - Decrease time slice, and requeue & reschedule task if time slice becomes zero
 10. `trigger_load_balance_wrr`
     - Called from `scheduler_tick`
-    - Checks if 2000ms has passed, and calls `load_balance_wrr` if condition is met.
+    - Check if 2000ms has passed, and call `load_balance_wrr` if condition is met.
 11. `load_balance_wrr`
     - Called from `trigger_load_balance_wrr`
-    - Checks migration conditions (find MIN/MAX rq, whether task is running, cpu mask, weight condition) and migrate if conditions are met.
+    - Check migration conditions (find MIN/MAX rq, whether task is running, cpu mask, weight condition) and migrate if conditions are met.
 
 
 ### How to Keep the Single `wrr_rq` Empty
@@ -198,7 +198,6 @@ The following test names are based on executable binary files
     - It iterates over weight value from `1` to `20`
     - At each weight value, it checks elapsed time (in real time, not cpu time) of the last child process
     - It checks elapsed time for 10 iterations, and writes the result into text file (filename becomes `trial_$(nproc)_$(equal_weight).txt`)
-    - **Warning** since this test includes FILE I/O, rpi3 raise kernel panic if `WRR_LOAD_BALANCE` is enabled
 7. `random`
     - One of the main test
     - It takes single command line args, `nproc`
@@ -208,14 +207,13 @@ The following test names are based on executable binary files
     - At each weight value, it checks elapsed time (in real time, not cpu time) of the last child process
     - It checks elapsed time for 10 iterations, and writes the result into text file (filename becomes `random_$(nproc).txt`)
     - Difference between `trial` and `random` is `random` test set other processes' weight as random number
-    - **Warning** since this test includes FILE I/O, rpi3 raise kernel panic if `WRR_LOAD_BALANCE` is enabled
 8. `balance`
     - One of the main test
     - It takes single command line args, `nproc`
     - `./balance 10` means
         - Test `balance` with 10 child processes fork
     - It records balance factor of each `wrr_rq` every second (using extra system call `sched_get_balance`)
-    - It writes the balance factor history into text file (filename becomoes `balance_$(nproc).txt`)
+    - It writes the balance factor history into text file (filename becomes `balance_$(nproc).txt`)
     
 ### Test Results
 
