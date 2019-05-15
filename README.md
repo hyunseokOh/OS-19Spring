@@ -7,6 +7,12 @@
 ---
 # Project 3 - Weighted Round Robin Scheduler 
 
+## Table of Contents
+- [Build Configuration](#build-configuration)
+- [Implementation Details](#implementation-details)
+- [Investigate](#investigate)
+- [Lessons Learned](#lessons-learned)
+
 ## Build Configuration
 
 We added some custom configuration in `arch/arm64/Kconfig` as
@@ -18,7 +24,7 @@ We added some custom configuration in `arch/arm64/Kconfig` as
 | `CONFIG_GONGLE_DEBUG`     | whether enable some printk functions we embedded (default `false`)                          |
 | `CONFIG_WRR_BALANCE_TEST` | whether enable `select_task_rq_wrr` only returns cpu 0 and 1 (for testing, default `false`) |
 
-## Implementation Detail
+## Implementation Details
 
 ### Modified/Implemented Functions
 
@@ -205,3 +211,10 @@ The following test names are based on executable binary files
 ### Test Results
 
 
+## Lessons Learned
+- Current schedulers in Linux have been highly optimized.
+- There are hundreds of issues to add a new scheduler policy.
+- Ctags and cscope are inevitable.
+- A single line can save the world.
+- If you know your kernel and know yourself, you will not be imperiled in a hundred projects.
+- I'm Groot.
