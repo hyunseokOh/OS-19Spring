@@ -472,8 +472,10 @@ struct sched_wrr_entity {
   /* For weighted round robin */
   unsigned int weight;
   unsigned int time_slice;
-  unsigned short on_wrr_rq;
-  struct list_head run_node;
+  unsigned short on_rq;
+
+  struct wrr_rq *wrr_rq;
+  struct list_head wrr_node;
 };
 
 struct sched_dl_entity {
@@ -628,6 +630,7 @@ struct task_struct {
 	unsigned int			policy;
 	int				nr_cpus_allowed;
 	cpumask_t			cpus_allowed;
+  atomic_t       forbidden_allowed;
 
 #ifdef CONFIG_PREEMPT_RCU
 	int				rcu_read_lock_nesting;
@@ -1457,6 +1460,8 @@ extern int task_can_attach(struct task_struct *p, const struct cpumask *cs_cpus_
 #ifdef CONFIG_SMP
 extern void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask);
 extern int set_cpus_allowed_ptr(struct task_struct *p, const struct cpumask *new_mask);
+extern int clear_forbidden(struct task_struct *p);
+extern int set_forbidden(struct task_struct *p);
 #else
 static inline void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
 {
@@ -1466,6 +1471,12 @@ static inline int set_cpus_allowed_ptr(struct task_struct *p, const struct cpuma
 	if (!cpumask_test_cpu(0, new_mask))
 		return -EINVAL;
 	return 0;
+}
+static inline int clear_forbidden(struct task_struct *p) {
+  return 0;
+}
+static inline int set_forbidden(struct task_struct *p) {
+  return 0;
 }
 #endif
 

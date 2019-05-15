@@ -821,6 +821,8 @@ __SYSCALL(__NR_statx, sys_statx)
 __SYSCALL(__NR_sched_set_weight, sys_sched_set_weight)
 #define __NR_sched_get_weight 399
 __SYSCALL(__NR_sched_get_weight, sys_sched_get_weight)
+#define __NR_sched_get_balance 400
+__SYSCALL(__NR_sched_get_balance, sys_sched_get_balance)
 
 /*
  * Please add new compat syscalls above this comment and update

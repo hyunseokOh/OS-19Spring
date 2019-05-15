@@ -942,5 +942,6 @@ asmlinkage long sys_statx(int dfd, const char __user *path, unsigned flags,
 			  unsigned mask, struct statx __user *buffer);
 asmlinkage long sys_sched_set_weight(pid_t pid, int weight);
 asmlinkage long sys_sched_get_weight(pid_t pid);
+asmlinkage long sys_sched_get_balance(int *balance, int size);
 
 #endif

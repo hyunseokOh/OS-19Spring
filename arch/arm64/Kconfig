@@ -125,6 +125,18 @@ config ARM64
 	help
 	  ARM 64-bit (AArch64) Linux support.
 
+config SCHED_WRR
+  def_bool y
+
+config WRR_LOAD_BALANCE
+  def_bool y
+
+config GONGLE_DEBUG
+  def_bool n
+
+config WRR_BALANCE_TEST
+  def_bool n
+
 config 64BIT
 	def_bool y
 

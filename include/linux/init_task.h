@@ -16,6 +16,7 @@
 #include <linux/sched/autogroup.h>
 #include <net/net_namespace.h>
 #include <linux/sched/rt.h>
+#include <linux/sched/wrr.h>
 #include <linux/livepatch.h>
 #include <linux/mm_types.h>
 
@@ -248,6 +249,11 @@ extern struct cred init_cred;
 		.run_list	= LIST_HEAD_INIT(tsk.rt.run_list),	\
 		.time_slice	= RR_TIMESLICE,				\
 	},								\
+  .wrr  = {           \
+    .weight = WRR_DEFAULT_WEIGHT,     \
+    .time_slice = WRR_TIMESLICE(WRR_DEFAULT_WEIGHT),  \
+    .wrr_node = LIST_HEAD_INIT(tsk.wrr.wrr_node),   \
+  },                \
 	.tasks		= LIST_HEAD_INIT(tsk.tasks),			\
 	INIT_PUSHABLE_TASKS(tsk)					\
 	INIT_CGROUP_SCHED(tsk)						\

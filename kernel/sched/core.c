@@ -2203,6 +2203,11 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->rt.on_rq		= 0;
 	p->rt.on_list		= 0;
 
+  INIT_LIST_HEAD(&p->wrr.wrr_node);
+  p->wrr.weight   = current->wrr.weight; /* p is forked by current */
+  p->wrr.time_slice = WRR_TIMESLICE(p->wrr.weight);
+  p->wrr.on_rq    = 0;
+
 #ifdef CONFIG_PREEMPT_NOTIFIERS
 	INIT_HLIST_HEAD(&p->preempt_notifiers);
 #endif
@@ -2377,6 +2382,7 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 		p->prio = p->normal_prio = __normal_prio(p);
 		set_load_weight(p);
 
+    p->wrr.weight = WRR_DEFAULT_WEIGHT;
 		/*
 		 * We don't need the reset flag anymore after the fork. It has
 		 * fulfilled its duty:
@@ -2384,14 +2390,19 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 		p->sched_reset_on_fork = 0;
 	}
 
-	if (dl_prio(p->prio)) {
-		put_cpu();
-		return -EAGAIN;
-	} else if (rt_prio(p->prio)) {
-		p->sched_class = &rt_sched_class;
-	} else {
-		p->sched_class = &fair_sched_class;
-	}
+  if (wrr_policy(p->policy)) {
+    /* keep wrr policy */
+    p->sched_class = &wrr_sched_class;
+  } else {
+    if (dl_prio(p->prio)) {
+      put_cpu();
+      return -EAGAIN;
+    } else if (rt_prio(p->prio)) {
+      p->sched_class = &rt_sched_class;
+    } else {
+      p->sched_class = &fair_sched_class;
+    }
+  }
 
 	init_entity_runnable_average(&p->se);
 
@@ -3040,6 +3051,11 @@ void scheduler_tick(void)
 #ifdef CONFIG_SMP
 	rq->idle_balance = idle_cpu(cpu);
 	trigger_load_balance(rq);
+#ifdef CONFIG_SCHED_WRR
+#ifdef CONFIG_WRR_LOAD_BALANCE
+  trigger_load_balance_wrr(rq);
+#endif
+#endif
 #endif
 	rq_last_tick_reset(rq);
 }
@@ -3962,7 +3978,10 @@ static void __setscheduler_params(struct task_struct *p,
 	 * !rt_policy. Always setting this ensures that things like
 	 * getparam()/getattr() don't report silly values for !rt tasks.
 	 */
-	p->rt_priority = attr->sched_priority;
+  if (!wrr_policy(policy)) {
+    /* prevent arbitrary set when change to SCHED_WRR */
+    p->rt_priority = attr->sched_priority;
+  }
 	p->normal_prio = normal_prio(p);
 	set_load_weight(p);
 }
@@ -3977,16 +3996,20 @@ static void __setscheduler(struct rq *rq, struct task_struct *p,
 	 * Keep a potential priority boosting if called from
 	 * sched_setscheduler().
 	 */
-	p->prio = normal_prio(p);
-	if (keep_boost)
-		p->prio = rt_effective_prio(p, p->prio);
+  p->prio = normal_prio(p);
+  if (keep_boost)
+    p->prio = rt_effective_prio(p, p->prio);
 
-	if (dl_prio(p->prio))
-		p->sched_class = &dl_sched_class;
-	else if (rt_prio(p->prio))
-		p->sched_class = &rt_sched_class;
-	else
-		p->sched_class = &fair_sched_class;
+  if (wrr_policy(p->policy)) {
+    p->sched_class = &wrr_sched_class;
+  } else {
+    if (dl_prio(p->prio))
+      p->sched_class = &dl_sched_class;
+    else if (rt_prio(p->prio))
+      p->sched_class = &rt_sched_class;
+    else
+      p->sched_class = &fair_sched_class;
+  }
 }
 
 /*
@@ -4042,12 +4065,19 @@ recheck:
 	 * 1..MAX_USER_RT_PRIO-1, valid priority for SCHED_NORMAL,
 	 * SCHED_BATCH and SCHED_IDLE is 0.
 	 */
-	if ((p->mm && attr->sched_priority > MAX_USER_RT_PRIO-1) ||
-	    (!p->mm && attr->sched_priority > MAX_RT_PRIO-1))
-		return -EINVAL;
-	if ((dl_policy(policy) && !__checkparam_dl(attr)) ||
-	    (rt_policy(policy) != (attr->sched_priority != 0)))
-		return -EINVAL;
+
+  /*
+   * Following error checks are related to sched_priority
+   * However, wrr policy does not affect by sched_priority
+   */
+  if (!wrr_policy(policy)) {
+    if ((p->mm && attr->sched_priority > MAX_USER_RT_PRIO-1) ||
+        (!p->mm && attr->sched_priority > MAX_RT_PRIO-1))
+      return -EINVAL;
+    if ((dl_policy(policy) && !__checkparam_dl(attr)) ||
+        (rt_policy(policy) != (attr->sched_priority != 0)))
+      return -EINVAL;
+  }
 
 	/*
 	 * Allow unprivileged RT tasks to decrease priority:
@@ -4136,6 +4166,7 @@ recheck:
 		if (dl_policy(policy) && dl_param_changed(p, attr))
 			goto change;
 
+    /* For SCHED_WRR, there is no chance to alter other attributes */
 		p->sched_reset_on_fork = reset_on_fork;
 		task_rq_unlock(rq, p, &rf);
 		return 0;
@@ -4242,6 +4273,7 @@ change:
 	balance_callback(rq);
 	preempt_enable();
 
+
 	return 0;
 }
 
@@ -4311,6 +4343,8 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 {
 	struct sched_param lparam;
 	struct task_struct *p;
+  struct cpumask min_mask; /* mask for min cpu */
+  int min_cpu;
 	int retval;
 
 	if (!param || pid < 0)
@@ -4321,8 +4355,73 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 	rcu_read_lock();
 	retval = -ESRCH;
 	p = find_process_by_pid(pid);
-	if (p != NULL)
+	if (p != NULL) {
+    retval = 0;
+    if (!wrr_policy(p->policy) && wrr_policy(policy)) {
+      /* from other policy to wrr_policy */
+
+      if (cpumask_test_cpu(FORBIDDEN_WRR_QUEUE, &p->cpus_allowed)) {
+        if (cpumask_weight(&p->cpus_allowed) == 1) {
+          /* only forbidden cpu allowed (cannot change) */
+          rcu_read_unlock();
+          return -EINVAL;
+        } else {
+          /* back-up the info that forbidden was allowed before */
+          atomic_set(&p->forbidden_allowed, 1);
+        }
+      }
+
+      if (task_cpu(p) == FORBIDDEN_WRR_QUEUE) {
+        // task in forbidden cpu
+        // try to assign to min_weight cpu (force assign) 
+        cpumask_clear(&min_mask);
+        min_cpu = get_target_cpu(WRR_GET_MIN, 0, p);
+
+        if (min_cpu != -1) {
+          cpumask_set_cpu(min_cpu, &min_mask);
+          // Prevent p going away 
+          get_task_struct(p);
+          rcu_read_unlock();
+          retval = set_cpus_allowed_ptr(p, &min_mask);
+          put_task_struct(p);
+          rcu_read_lock();
+        }
+      }
+
+      retval = clear_forbidden(p);
+      if (retval != 0) {
+        rcu_read_unlock();
+        return retval;
+      }
+    } else if (wrr_policy(p->policy) && !wrr_policy(policy)) {
+      /* from wrr to other */
+      if (atomic_read(&p->forbidden_allowed)) {
+        /* forbidden queue was previously allowed */
+        retval = set_forbidden(p);
+        if (retval != 0) {
+          rcu_read_unlock();
+          return retval;
+        }
+        atomic_set(&p->forbidden_allowed, 0);
+      }
+    }
 		retval = sched_setscheduler(p, policy, &lparam);
+
+    if (retval != 0) {
+      /* failed to change scheduler */
+      if (!wrr_policy(p->policy) && wrr_policy(policy)) {
+        /* failed to set sched policy to wrr */
+        if (atomic_read(&p->forbidden_allowed)) {
+          /* restore */
+          set_forbidden(p);
+          atomic_set(&p->forbidden_allowed, 0);
+        }
+      } else if (wrr_policy(p->policy) && !wrr_policy(policy)) {
+        /* failed to set sched policy from wrr */
+        clear_forbidden(p);
+      }
+    }
+  }
 	rcu_read_unlock();
 
 	return retval;
@@ -4679,7 +4778,15 @@ long sched_setaffinity(pid_t pid, const struct cpumask *in_mask)
 			goto out_free_new_mask;
 		}
 		rcu_read_unlock();
-	}
+	} else if (task_has_wrr_policy(p)) {
+    /* zero out forbidden */
+    cpumask_clear_cpu(FORBIDDEN_WRR_QUEUE, new_mask);
+    if (cpumask_weight(new_mask) == 0) {
+      /* empty cpu */
+      retval = -EINVAL;
+      goto out_free_new_mask;
+    }
+  }
 #endif
 again:
 	retval = __set_cpus_allowed_ptr(p, new_mask, true);
@@ -5037,6 +5144,52 @@ void io_schedule(void)
 EXPORT_SYMBOL(io_schedule);
 
 /**
+ * sys_sched_get_balance - get weight of each wrr_rq
+ * This is implemented for monitoring load balance effects
+ *
+ * @weights: array to store value
+ * @size: array size
+ *
+ * Return: On success, return 0. Each weight_sum will be written in weights
+ * On failuer, negative error code will be returned
+ */
+SYSCALL_DEFINE2(sched_get_balance, int *, weights, int, size)
+{
+  int bf[NR_CPUS - 1];
+  int retval = 0;
+  int cpu;
+  int i;
+  struct rq *rq;
+  struct wrr_rq *wrr_rq;
+  
+  if (size < NR_CPUS - 1) {
+    return -EINVAL;
+  }
+
+  for (i = 0; i < NR_CPUS - 1; i++) {
+    bf[i] = 0;
+  }
+
+  rcu_read_lock();
+  for_each_online_cpu(cpu) {
+    if (cpu == FORBIDDEN_WRR_QUEUE) continue;
+    rq = cpu_rq(cpu);
+    wrr_rq = &rq->wrr;
+    bf[cpu] = wrr_rq->weight_sum;
+  }
+  rcu_read_unlock();
+
+  for (i = 0; i < NR_CPUS - 1; i++) {
+    if (copy_to_user(weights + i, bf + i, sizeof(int))) {
+      retval = -EFAULT;
+      break;
+    }
+  }
+
+  return retval;
+}
+
+/**
  * sys_sched_set_weight - set weight for the target process (with pid)
  * if pid == 0, set the weight for the calling process
  * @weight: weighted round robin scheduler weight
@@ -5046,7 +5199,72 @@ EXPORT_SYMBOL(io_schedule);
  */
 SYSCALL_DEFINE2(sched_set_weight, pid_t, pid, int, weight)
 {
-  return 0;
+  struct task_struct *p = NULL;
+  struct rq *rq = NULL;
+  struct rq_flags rf;
+  struct wrr_rq *wrr_rq = NULL;
+  kuid_t uid;
+  int previous_weight;
+  int is_root;
+
+  if (weight < 1 || weight > 20) {
+    /* invalid weight range */
+    return -EINVAL;
+  }
+
+  if (pid < 0) {
+    /* invalid pid (negative) */
+    return -EINVAL;
+  }
+
+  rcu_read_lock();
+  p = find_process_by_pid(pid);
+  if (p == NULL) {
+    /* failed to find task struct */
+    rcu_read_unlock();
+    return -ESRCH;
+  }
+
+  uid = current_cred()->uid;
+  is_root = uid.val == 0;
+  previous_weight = p->wrr.weight;
+
+  if (previous_weight == weight) {
+    /* early exit, nothing to do */
+    rcu_read_unlock();
+    return 0;
+  }
+
+  if (!is_root) {
+    if (!check_same_owner(p)) {
+      /* not owner of task */
+      rcu_read_unlock();
+      return -EPERM;
+    }
+    if (weight > previous_weight) {
+      /* only root user can increase weight */
+      rcu_read_unlock();
+      return -EPERM;
+    }
+  }
+
+  /* follow locking logic of sched_rr_get_interval */
+  rq = task_rq_lock(p, &rf);
+	update_rq_clock(rq);
+  if (p->policy == SCHED_WRR) {
+    /* actual modifying goes here */
+    p->wrr.weight = weight;
+    wrr_rq = p->wrr.wrr_rq;
+    wrr_rq->weight_sum += (weight - previous_weight);
+    task_rq_unlock(rq, p, &rf);
+    rcu_read_unlock();
+    return 0;
+  } else {
+    /* cannot modify */
+    task_rq_unlock(rq, p, &rf);
+    rcu_read_unlock();
+    return -EINVAL;
+  }
 }
 
 /**
@@ -5058,7 +5276,24 @@ SYSCALL_DEFINE2(sched_set_weight, pid_t, pid, int, weight)
  */
 SYSCALL_DEFINE1(sched_get_weight, pid_t, pid)
 {
-  return 0;
+  struct task_struct *p;
+  int weight;
+
+  if (pid < 0) {
+    return -EINVAL;
+  }
+
+  rcu_read_lock();
+  p = find_process_by_pid(pid);
+
+  if (p == NULL) {
+    rcu_read_unlock();
+    return -ESRCH;
+  }
+
+  weight = p->wrr.weight;
+  rcu_read_unlock();
+  return weight;
 }
 
 /**
@@ -5890,6 +6125,9 @@ void __init sched_init(void)
 		init_cfs_rq(&rq->cfs);
 		init_rt_rq(&rq->rt);
 		init_dl_rq(&rq->dl);
+#ifdef CONFIG_SCHED_WRR
+    init_wrr_rq(&rq->wrr);
+#endif
 #ifdef CONFIG_FAIR_GROUP_SCHED
 		root_task_group.shares = ROOT_TASK_GROUP_LOAD;
 		INIT_LIST_HEAD(&rq->leaf_cfs_rq_list);
