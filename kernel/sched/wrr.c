@@ -16,6 +16,43 @@ int coin = 0;
 DEFINE_SPINLOCK(load_balance_lock); // need to grab lock when updating time
 unsigned long old_jiffies = 0;
 
+int clear_forbidden(struct task_struct *p) {
+  int retval = 0;
+  struct cpumask mask;
+
+  if (!cpumask_test_cpu(FORBIDDEN_WRR_QUEUE, &p->cpus_allowed)) {
+    return retval;
+  }
+
+  cpumask_copy(&mask, &p->cpus_allowed);
+  cpumask_clear_cpu(FORBIDDEN_WRR_QUEUE, &mask);
+
+  get_task_struct(p);
+  rcu_read_unlock();
+  retval = set_cpus_allowed_ptr(p, &mask);
+  put_task_struct(p);
+  rcu_read_lock();
+  return retval;
+}
+
+int set_forbidden(struct task_struct *p) {
+  int retval = 0;
+  struct cpumask mask;
+
+  if (cpumask_test_cpu(FORBIDDEN_WRR_QUEUE, &p->cpus_allowed)) {
+    return retval;
+  }
+
+  cpumask_copy(&mask, &p->cpus_allowed);
+  cpumask_set_cpu(FORBIDDEN_WRR_QUEUE, &mask);
+  get_task_struct(p);
+  rcu_read_unlock();
+  retval = set_cpus_allowed_ptr(p, &mask);
+  put_task_struct(p);
+  rcu_read_lock();
+  return retval;
+}
+
 // actual load-balancing method
 static void load_balance_wrr(void) {
   struct rq *rq;

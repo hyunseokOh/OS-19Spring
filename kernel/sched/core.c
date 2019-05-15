@@ -4343,7 +4343,6 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 {
 	struct sched_param lparam;
 	struct task_struct *p;
-  struct cpumask mask;
   struct cpumask min_mask; /* mask for min cpu */
   int min_cpu;
 	int retval;
@@ -4372,9 +4371,6 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
         }
       }
 
-      cpumask_copy(&mask, &p->cpus_allowed);
-      cpumask_clear_cpu(FORBIDDEN_WRR_QUEUE, &mask);
-
       if (task_cpu(p) == FORBIDDEN_WRR_QUEUE) {
         // task in forbidden cpu
         // try to assign to min_weight cpu (force assign) 
@@ -4386,39 +4382,53 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
           // Prevent p going away 
           get_task_struct(p);
           rcu_read_unlock();
-          retval = __set_cpus_allowed_ptr(p, &min_mask, true);
+          retval = set_cpus_allowed_ptr(p, &min_mask);
           put_task_struct(p);
           rcu_read_lock();
         }
       }
 
-      get_task_struct(p);
-      rcu_read_unlock();
-      retval = __set_cpus_allowed_ptr(p, &mask, true);
-      put_task_struct(p);
+      retval = clear_forbidden(p);
       if (retval != 0) {
+        rcu_read_unlock();
         return retval;
       }
-      rcu_read_lock();
     } else if (wrr_policy(p->policy) && !wrr_policy(policy)) {
       /* from wrr to other */
       if (atomic_read(&p->forbidden_allowed)) {
         /* forbidden queue was previously allowed */
-        cpumask_copy(&mask, &p->cpus_allowed);
-        cpumask_set_cpu(FORBIDDEN_WRR_QUEUE, &mask);
-
-        get_task_struct(p);
-        rcu_read_unlock();
-        retval = set_cpus_allowed_ptr(p, &mask);
-        put_task_struct(p);
+        retval = set_forbidden(p);
         if (retval != 0) {
+          rcu_read_unlock();
           return retval;
         }
-        rcu_read_lock();
         atomic_set(&p->forbidden_allowed, 0);
       }
     }
 		retval = sched_setscheduler(p, policy, &lparam);
+
+    if (retval != 0) {
+      /* failed to change scheduler */
+      if (!wrr_policy(p->policy) && wrr_policy(policy)) {
+        /* failed to set sched policy to wrr */
+        if (atomic_read(&p->forbidden_allowed)) {
+          /* restore */
+          retval = set_forbidden(p);
+          if (retval != 0) {
+            rcu_read_unlock();
+            return retval;
+          }
+          atomic_set(&p->forbidden_allowed, 0);
+        }
+      } else if (wrr_policy(p->policy) && !wrr_policy(policy)) {
+        /* failed to set sched policy from wrr */
+        retval = clear_forbidden(p);
+        if (retval != 0) {
+          rcu_read_unlock();
+          return retval;
+        }
+      }
+    }
   }
 	rcu_read_unlock();
 
