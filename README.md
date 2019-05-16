@@ -217,6 +217,15 @@ The following test names are based on executable binary files
     - It records balance factor of each `wrr_rq` every second (using extra system call `sched_get_balance`)
     - It writes the balance factor history into text file (filename becomes `balance_$(nproc).txt`)
     - `balance_std` is same test, but it does not write into file. It writes into `stdout` (for demo)
+9. `cpumove`
+    - One of the main test (included in video demo)
+    - Every 2 seconds, it executes follows
+        - Move task to cpu number 3 (Forbidden cpu) via `sched_setaffinity`
+        - Allow all cpus again
+        - Change sched policy to `SCHED_WRR`
+        - Try to move task to cpu number 3 (failed)
+        - Change sched policy to `SCHED_OTHER`
+        - Move task to cpu number 3 (success)
     
 ### Test Results
 
