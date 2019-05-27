@@ -36,6 +36,7 @@
 #include <linux/iomap.h>
 #include <linux/namei.h>
 #include <linux/uio.h>
+#include <linux/gps.h> // GPS-related, including struct gps_location
 #include "ext2.h"
 #include "acl.h"
 #include "xattr.h"
