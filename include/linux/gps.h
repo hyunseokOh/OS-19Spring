@@ -23,4 +23,6 @@ static inline int valid_fractional(int fractional) {
 
 int valid_gps_location(struct gps_location *loc);
 
+struct gps_location get_current_gps_location(void);
+
 #endif

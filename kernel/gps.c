@@ -18,7 +18,7 @@ int valid_gps_location(struct gps_location *loc) {
 /* need to implement a function to get current gps_location
  * since, set_gps_location in inode does not receive gps_location as its argument
  */
-struct gps_location get_current_gps_location() {
+struct gps_location get_current_gps_location(void) {
   struct gps_location loc;
 
   mutex_lock(&gps_lock);
@@ -50,7 +50,7 @@ SYSCALL_DEFINE1(set_gps_location, struct gps_location __user *, loc) {
 
   /* grab lock before updating gps_location */
   mutex_lock(&gps_lock);
-  gps_loc = kloc;
+  gps_loc = *kloc;
   mutex_unlock(&gps_lock);
 
 free_and_return:
