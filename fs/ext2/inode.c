@@ -1440,6 +1440,13 @@ struct inode *ext2_iget (struct super_block *sb, unsigned long ino)
 	ei->i_file_acl = le32_to_cpu(raw_inode->i_file_acl);
 	ei->i_dir_acl = 0;
 
+	// get inode_info (memory) from inode (disk): le32_to_cpu conversion is needed
+	ei->i_lat_intger = le32_to_cpu(raw_inode->i_lat_integer);
+	ei->i_lat_fractional = le32_to_cpu(raw_inode->i_lat_fractional);
+	ei->i_lng_integer = le32_to_cpu(raw_inode->i_lng_integer);
+	ei->i_lng_fractional = le32_to_cpu(raw_inode->i_lng_fractional);
+	ei->i_accuracy = le32_to_cpu(raw_inode->i_accuracy);
+
 	if (ei->i_file_acl &&
 	    !ext2_data_block_valid(EXT2_SB(sb), ei->i_file_acl, 1)) {
 		ext2_error(sb, "ext2_iget", "bad extended attribute block %u",
@@ -1573,6 +1580,14 @@ static int __ext2_write_inode(struct inode *inode, int do_sync)
 	raw_inode->i_frag = ei->i_frag_no;
 	raw_inode->i_fsize = ei->i_frag_size;
 	raw_inode->i_file_acl = cpu_to_le32(ei->i_file_acl);
+
+	// write inode_info (memory) to inode (disk): cpu_to_le32 conversion is needed
+	raw_inode->i_lat_integer = cpu_to_le32(ei->i_lat_integer);
+	raw_inode->i_lat_fractional = cpu_to_le32(ei->i_lat_fractional);
+	raw_inode->i_lng_integer = cpu_to_le32(ei->i_lng_integer);
+	raw_inode->i_lng_fractional = cpu_to_le32(ei->i_lng_fractional);
+	raw_inode->i_accuracy = cpu_to_le32(ei->i_accuracy);
+
 	if (!S_ISREG(inode->i_mode))
 		raw_inode->i_dir_acl = cpu_to_le32(ei->i_dir_acl);
 	else {
@@ -1659,4 +1674,41 @@ int ext2_setattr(struct dentry *dentry, struct iattr *iattr)
 	mark_inode_dirty(inode);
 
 	return error;
+}
+
+/* implementing ext2_set_gps_location() and ext2_get_gps_location() in inode.c
+ * as these operations are related to modifying/receiving inode fields
+ */
+int ext2_set_gps_location (struct inode *inode){
+
+	// TODO: check whether this locking mechanism is correct
+	inode_lock(inode);
+
+	struct gps_location curr_loc = get_current_gps_location(); // retreive currnt gps_location
+
+	// referenced from __ext2_write_inode method
+	struct ext2_inode_info *ei = EXT2_I(inode);
+	ei->i_lat_integer = curr_loc.lat_integer;
+	ei->i_lat_fractional = curr_loc.lat_fractional;
+	ei->i_lng_integer = curr_loc.lng_integer;
+	ei->i_lng_fractional = curr_loc.lng_fractional;
+	ei->i_accuracy = curr_loc.accuracy;
+
+	inode_unlock(inode);
+}
+
+int ext2_get_gps_location (struct inode *inode, struct gps_location *loc){
+
+	// TODO: check whether this locking mechanism is correct
+	inode_lock(inode);
+
+	// referenced from __ext2_write_inode method
+	struct ext2_inode_info *ei = EXT2_I(inode);
+	loc.i_lat_integer = ei->i_lat_integer;
+	loc.i_lat_fractional = ei->i_lat_fractional;
+	loc.i_lng_integer = ei->i_lng_integer;
+	loc.i_lng_fractional = ei->i_lng_fractional;
+	loc.i_accuracy = ei->i_accuracy;
+
+	inode_unlock(inode);
 }
