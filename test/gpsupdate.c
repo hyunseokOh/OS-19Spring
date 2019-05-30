@@ -34,6 +34,7 @@ int main(int argc, char *argv[]) {
   int lng_integer;
   int lng_fractional;
   int accuracy;
+  int syscallResult;
 
   if (argc != 6) {
     printf("Must pass required arguments!\n");
@@ -54,5 +55,10 @@ int main(int argc, char *argv[]) {
     accuracy
   };
 
-  syscall(SYS_SET_GPS_LOCATION, &gps);
+  syscallResult = syscall(SYS_SET_GPS_LOCATION, &gps);
+
+  if (syscallResult == -1) {
+    printf("Oops! syscall returned -1, something wrong\n");
+    return 0;
+  }
 }
