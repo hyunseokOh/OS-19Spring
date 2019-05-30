@@ -11,7 +11,8 @@ int valid_gps_location(struct gps_location *loc) {
   return valid_longitude(loc->lng_integer) &&
     valid_latitude(loc->lat_integer) &&
     valid_fractional(loc->lat_fractional) &&
-    valid_fractional(loc->lng_fractional);
+    valid_fractional(loc->lng_fractional) &&
+    valid_accuracy(loc->accuracy);
 }
 
 SYSCALL_DEFINE1(set_gps_location, struct gps_location __user *, loc) {
@@ -37,6 +38,10 @@ SYSCALL_DEFINE1(set_gps_location, struct gps_location __user *, loc) {
 free_and_return:
   kfree(kloc);
   return retval;
+}
+
+SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_location __user *, loc) {
+  return 0;
 }
 
 static inline kfloat _access_range(int acc1, int acc2) {

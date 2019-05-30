@@ -25,6 +25,10 @@ static inline int valid_fractional(int fractional) {
   return 0 <= fractional && fractional <= 999999;
 }
 
+static inline int valid_accuracy(int accuracy) {
+  return accuracy >= 0;
+}
+
 int valid_gps_location(struct gps_location *loc);
 
 int can_access(struct gps_location *g1, struct gps_location *g2);
