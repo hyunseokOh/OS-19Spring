@@ -67,7 +67,7 @@ int kfloat_comp(const kfloat *f1, const kfloat *f2) {
    * Compare two floats
    * f1 < f2: return -1
    * f1 == f2: return 0
-   * f1 == f2: return 1
+   * f1 > f2: return 1
    *
    * actually, similar as subtraction
    */
@@ -105,7 +105,7 @@ static inline kfloat _kfloat_add(const kfloat *f1, const kfloat *f2) {
   pos = POS(f1);
   f1_val = VAL(f1);
 
-  while (overflow_mul(f2->value, pad_idx[pad]) && pad >= 0) {
+  while (overflow_mul(f2->value, pad_idx[pad]) && pad > 0) {
     f1_val /= 10;
     pad--;
     pos--;
