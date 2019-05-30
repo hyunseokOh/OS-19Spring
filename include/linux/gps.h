@@ -1,6 +1,10 @@
 #ifndef _LINUX_GPS_H
 #define _LINUX_GPS_H
 
+#include <linux/types.h>
+#include <linux/kernel.h>
+#include <linux/kfloat.h>
+
 struct gps_location {
   int lat_integer;
   int lat_fractional;
@@ -22,5 +26,7 @@ static inline int valid_fractional(int fractional) {
 }
 
 int valid_gps_location(struct gps_location *loc);
+
+int can_access(struct gps_location *g1, struct gps_location *g2);
 
 #endif
