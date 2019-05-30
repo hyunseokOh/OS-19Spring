@@ -23,7 +23,7 @@ extern kfloat degree90;
 extern kfloat earth_radius;
 extern kfloat degree2rad;
 extern kfloat rad2degree;
-extern kfloat kone;
+extern kfloat constant_1;
 
 static inline int overflow_add(long long l1, long long l2) {
   /*

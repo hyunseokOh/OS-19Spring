@@ -79,6 +79,9 @@ int can_access(struct gps_location *g1, struct gps_location *g2) {
   g2_lat = to_kfloat(g2->lat_integer, g2->lat_fractional);
   g2_lng = to_kfloat(g2->lng_integer, g2->lng_fractional);
 
+  lat_sub = kfloat_sub(&g1_lat, &g2_lat);
+  lng_sub = kfloat_sub(&g1_lng, &g2_lng);
+
   access_range = _access_range(g1->accuracy, g2->accuracy);
   access_range = kfloat_cos(&access_range);
 
@@ -86,7 +89,7 @@ int can_access(struct gps_location *g1, struct gps_location *g2) {
   g2_lat = kfloat_cos(&g2_lat);
 
   tmp = kfloat_cos(&lng_sub);
-  tmp = kfloat_sub(&kone, &tmp);
+  tmp = kfloat_sub(&constant_1, &tmp);
   tmp = kfloat_mul(&g2_lat, &tmp);
   tmp = kfloat_mul(&g1_lat, &tmp);
 

@@ -43,16 +43,16 @@ kfloat degree180  =   { 180, 0 };
 kfloat degree180_neg =  { -180, 0 };
 kfloat degree360     =  { 360, 0 };
 kfloat earth_radius = { 156788962057071, 18 };
-kfloat kone = { 1, 0 };
+kfloat constant_1 = { 1, 0 };
 
 kfloat kfloat_neg(const kfloat *f) {
   /*
    * Safe negation considering over(under)flow
+   * We cannot negate LLONG_MIN
+   * In that case, just convert to LLONG_MAX
    */
   kfloat result;
-  if (VAL(f) == LLONG_MAX) {
-    result.value = LLONG_MIN;
-  } else if (VAL(f) == LLONG_MIN) {
+  if (VAL(f) == LLONG_MIN) {
     result.value = LLONG_MAX;
   } else {
     result.value = -VAL(f);
@@ -95,6 +95,9 @@ int kfloat_comp(const kfloat *f1, const kfloat *f2) {
 }
 
 static inline kfloat _kfloat_add(const kfloat *f1, const kfloat *f2) {
+  /*
+   * Assumption: POS(f1) >= POS(f2) always
+   */
   int pad;
   int pos;
   long long f1_val;
@@ -105,13 +108,13 @@ static inline kfloat _kfloat_add(const kfloat *f1, const kfloat *f2) {
   pos = POS(f1);
   f1_val = VAL(f1);
 
-  while (overflow_mul(f2->value, pad_idx[pad]) && pad > 0) {
+  while (overflow_mul(VAL(f2), pad_idx[pad]) && pad > 0) {
     f1_val /= 10;
     pad--;
     pos--;
   }
 
-  f2_val = f2->value * pad_idx[pad];
+  f2_val = VAL(f2) * pad_idx[pad];
 
   while (overflow_add(f1_val, f2_val) && pos > 0) {
     f1_val /= 10;
@@ -204,6 +207,7 @@ kfloat kfloat_sin(const kfloat *f) {
     /* left shift */
     moved = kfloat_sub(&degree180, f);
   } else if (-180 <= f_int && f_int < -90) {
+    /* right shift */
     moved = kfloat_sub(&degree180_neg, f);
   }
 
@@ -243,6 +247,9 @@ kfloat kfloat_cos(const kfloat *f) {
   f_int = KINT(f);
   moved = *f;
 
+  /*
+   * Invariant: always between (-360 <= f <= 360) in degree
+   */
   if (180 < f_int && f_int <= 360) {
     moved = kfloat_sub(f, &degree360);
     f_int -= 360;
@@ -251,12 +258,19 @@ kfloat kfloat_cos(const kfloat *f) {
     f_int += 360;
   }
 
+  /*
+   * Invariant: always between (-180 <= f <= 180) in degree
+   */
   if (0 <= f_int && f_int <= 180) {
     /*
      * cos(x) == sin(90 - x)
      */
     moved = kfloat_sub(&degree90, &moved);
   } else {
+    /*
+     * -180 <= f_int < 0
+     *  cos(x) == sin(90 + x)
+     */
     moved = kfloat_add(&degree90, &moved);
   }
   return kfloat_sin(&moved);
