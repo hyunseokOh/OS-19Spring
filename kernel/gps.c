@@ -62,7 +62,69 @@ free_and_return:
 }
 
 SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_location __user *, loc) {
-  return 0;
+  /*
+   * no strlen_user is in tizen?
+   * From elixir, strlen_user is defined as 
+   * static inline long strlen_user(const char __user *src)
+   * {
+   *  return strnlen_user(src, 32767);
+   * }
+   * so, let's take 32767 and use strnlen_user
+   */
+  long path_length = strnlen_user(pathname, 32767);
+  char *kpathname;
+  struct gps_location kloc;
+  struct inode *inode;
+  int retval = 0;
+
+  if (path_length == 0) {
+    /* return by !access_ok in strnlen_user */
+    retval = -EINVAL;
+    goto return_value;
+  }
+
+  kpathname = (char *)kmalloc(path_length * sizeof(char), GFP_KERNEL);
+  if (kpathname == NULL) {
+    retval = -ENOMEM;
+    goto return_value;
+  }
+
+  retval = strncpy_from_user(kpathname, pathname, path_length);
+  if (retval < 0) {
+    goto free_pathname;
+  }
+
+  inode = get_inode(kpathname, &retval);
+  if (retval < 0) {
+    goto free_pathname;
+  }
+
+  retval = generic_permission(inode, MAY_READ);
+  if (retval < 0) {
+    /* must be EACCESS */
+    goto free_pathname;
+  }
+
+  if (inode->i_op->get_gps_location) {
+    inode->i_op->get_gps_location(inode, &kloc);
+  } else {
+    /*
+     * FIXME (taebum)
+     * Can we say there is no GPS coordinate if get_gps_location is NULL?
+     */
+    retval = -ENODEV;
+    goto free_pathname;
+  }
+
+  if (copy_to_user(loc, &kloc, sizeof(struct gps_location))) {
+    retval = -EFAULT;
+    goto free_pathname;
+  }
+
+free_pathname:
+  kfree(kpathname);
+return_value:
+  return retval;
 }
 
 static inline kfloat _access_range(int acc1, int acc2) {

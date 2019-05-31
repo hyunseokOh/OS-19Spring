@@ -5,6 +5,9 @@
 #include <linux/kernel.h>
 #include <linux/kfloat.h>
 #include <linux/mutex.h>
+#include <linux/fs.h>
+#include <linux/path.h>
+#include <linux/namei.h>
 
 /* use in inode.c */
 extern struct mutex gps_lock;
@@ -17,6 +20,23 @@ struct gps_location {
   int lng_fractional;
   int accuracy;
 };
+
+static inline struct inode *get_inode(const char *pathname, int *retval) {
+  /*
+   * inode lookup reference
+   * https://stackoverflow.com/questions/27869570/retrieving-inode-struct-given-the-path-to-a-file
+   */
+  struct inode *inode;
+  struct path path;
+
+  *retval = kern_path(pathname, LOOKUP_FOLLOW, &path);
+  if (*retval == 0) {
+    inode = path.dentry->d_inode;
+  } else {
+    inode = NULL;
+  }
+  return inode;
+}
 
 static inline int valid_longitude(int longitude) {
   return -180 <= longitude && longitude <= 180;
