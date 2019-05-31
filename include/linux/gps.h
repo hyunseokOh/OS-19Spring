@@ -32,5 +32,6 @@ static inline int valid_accuracy(int accuracy) {
 int valid_gps_location(struct gps_location *loc);
 
 int can_access(struct gps_location *g1, struct gps_location *g2);
+struct gps_location get_current_gps_location(void);
 
 #endif

@@ -7,12 +7,28 @@
 
 #include <uapi/asm-generic/errno-base.h>
 
+DEFINE_MUTEX(gps_lock); /* for accessing shared data */
+struct gps_location gps_loc; // TODO: what would be the proper initial value for gps_loc?
+
 int valid_gps_location(struct gps_location *loc) {
   return valid_longitude(loc->lng_integer) &&
     valid_latitude(loc->lat_integer) &&
     valid_fractional(loc->lat_fractional) &&
     valid_fractional(loc->lng_fractional) &&
     valid_accuracy(loc->accuracy);
+}
+
+/* need to implement a function to get current gps_location
+ * since, set_gps_location in inode does not receive gps_location as its argument
+ */
+struct gps_location get_current_gps_location(void) {
+  struct gps_location loc;
+
+  mutex_lock(&gps_lock);
+  loc = gps_loc;
+  mutex_unlock(&gps_lock);
+
+  return loc;
 }
 
 SYSCALL_DEFINE1(set_gps_location, struct gps_location __user *, loc) {
@@ -34,6 +50,11 @@ SYSCALL_DEFINE1(set_gps_location, struct gps_location __user *, loc) {
     retval = -EINVAL;
     goto free_and_return;
   }
+
+  /* grab lock before updating gps_location */
+  mutex_lock(&gps_lock);
+  gps_loc = *kloc;
+  mutex_unlock(&gps_lock);
 
 free_and_return:
   kfree(kloc);
