@@ -27,7 +27,11 @@ int main(int argc, char *argv[]) {
   syscallResult = syscall(SYS_GET_GPS_LOCATION, argv[1], &gps);
 
   if (syscallResult == -1) {
-    printf("Oops! syscall returned -1, something wrong\n");
+    if (errno == EACCES) {
+      printf("Cannot access file %s\n", argv[1]);
+    } else {
+      printf("Oops! syscall returned -1, errno = %d\n", errno);
+    }
     return 0;
   }
 

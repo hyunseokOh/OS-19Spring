@@ -3,6 +3,7 @@
  */
 #include <linux/kfloat.h>
 #include <linux/kernel.h>
+#include <linux/printk.h>
 
 /* pos padding table */
 long long pad_idx[19] = {
@@ -45,6 +46,22 @@ kfloat degree360     =  { 360, 0 };
 kfloat earth_radius = { 156788962057071, 18 };
 kfloat constant_1 = { 1, 0 };
 
+static inline long long safe_pad(int idx) {
+  /*
+   * Actually, idx < || idx >= 19 will not happen (must not)
+   * but lets takes defensive approach in kernel
+   */
+  if (idx < 0 || idx >= 19) {
+    if (idx >= 19) {
+      return pad_idx[18];
+    } else {
+      return pad_idx[0];
+    }
+  } else {
+    return pad_idx[idx];
+  }
+}
+
 kfloat kfloat_neg(const kfloat *f) {
   /*
    * Safe negation considering over(under)flow
@@ -75,12 +92,15 @@ int kfloat_comp(const kfloat *f1, const kfloat *f2) {
   long long f1_padded;
   long long f2_padded;
   long long sub;
+  int pad;
 
   if (POS(f1) > POS(f2)) {
+    pad = POS(f1) - POS(f2);
     f1_padded = VAL(f1);
-    f2_padded = VAL(f2) * pad_idx[POS(f1) - POS(f2)];
+    f2_padded = VAL(f2) * safe_pad(pad);
   } else {
-    f1_padded = VAL(f1) * pad_idx[POS(f2) - POS(f1)];
+    pad = POS(f2) - POS(f1);
+    f1_padded = VAL(f1) * safe_pad(pad);
     f2_padded = VAL(f2);
   }
 
@@ -108,13 +128,13 @@ static inline kfloat _kfloat_add(const kfloat *f1, const kfloat *f2) {
   pos = POS(f1);
   f1_val = VAL(f1);
 
-  while (overflow_mul(VAL(f2), pad_idx[pad]) && pad > 0) {
+  while (overflow_mul(VAL(f2), safe_pad(pad)) && pad > 0) {
     f1_val /= 10;
     pad--;
     pos--;
   }
 
-  f2_val = VAL(f2) * pad_idx[pad];
+  f2_val = VAL(f2) * safe_pad(pad);
 
   while (overflow_add(f1_val, f2_val) && pos > 0) {
     f1_val /= 10;
@@ -201,7 +221,8 @@ kfloat kfloat_sin(const kfloat *f) {
   kfloat result;
 
   f_int = KINT(f);
-  moved = *f;
+  moved.value = VAL(f);
+  moved.pos = POS(f);
 
   if (90 < f_int && f_int <= 180) {
     /* left shift */
@@ -229,6 +250,7 @@ kfloat kfloat_sin(const kfloat *f) {
   x13 = kfloat_mul(factorials + 13, &x13);
   x15 = kfloat_mul(factorials + 15, &x15);
 
+  result = x;
   result = kfloat_sub(&result, &x3);
   result = kfloat_add(&result, &x5);
   result = kfloat_sub(&result, &x7);
@@ -245,7 +267,8 @@ kfloat kfloat_cos(const kfloat *f) {
   long long f_int;
 
   f_int = KINT(f);
-  moved = *f;
+  moved.value = VAL(f);
+  moved.pos = POS(f);
 
   /*
    * Invariant: always between (-360 <= f <= 360) in degree
@@ -288,7 +311,7 @@ kfloat to_kfloat(int integer, int fraction) {
     pos++;
   }
 
-  value = integer * pad_idx[pos] + fraction;
+  value = integer * safe_pad(pos) + fraction;
 
   result.value = value;
   result.pos = pos;

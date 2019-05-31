@@ -1703,12 +1703,21 @@ int ext2_set_gps_location (struct inode *inode){
 int ext2_get_gps_location (struct inode *inode, struct gps_location *loc){
 	// referenced from __ext2_write_inode method
 	struct ext2_inode_info *ei = EXT2_I(inode);
+  struct gps_location ei_loc = {
+    ei->i_lat_integer,
+    ei->i_lat_fractional,
+    ei->i_lng_integer,
+    ei->i_lng_fractional,
+    ei->i_accuracy
+  };
 
-	loc->lat_integer = ei->i_lat_integer;
-	loc->lat_fractional = ei->i_lat_fractional;
-	loc->lng_integer = ei->i_lng_integer;
-	loc->lng_fractional = ei->i_lng_fractional;
-	loc->accuracy = ei->i_accuracy;
-
-	return 0;
+  mutex_lock(&gps_lock);
+  if (can_access(&ei_loc, &gps_loc)) {
+    *loc = ei_loc;
+    mutex_unlock(&gps_lock);
+    return 0;
+  } else {
+    mutex_unlock(&gps_lock);
+    return -EACCES;
+  }
 }

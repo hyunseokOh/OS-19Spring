@@ -4,8 +4,8 @@
 #define VAL(f) (f->value)
 #define POS(f) (f->pos)
 #define RADIAN(f) (kfloat_mul(f, &degree2rad))
-#define KINT(f) (VAL(f) / pad_idx[POS(f)])
-#define KFRAC(f) (VAL(f) % pad_idx[POS(f)])
+#define KINT(f) (VAL(f) / safe_pad(POS(f)))
+#define KFRAC(f) (VAL(f) % safe_pad(POS(f)))
 
 typedef struct {
   long long value;

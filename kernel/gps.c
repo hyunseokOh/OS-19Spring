@@ -4,6 +4,7 @@
 #include <linux/uaccess.h>
 #include <linux/types.h>
 #include <linux/kfloat.h>
+#include <linux/printk.h>
 
 #include <uapi/asm-generic/errno-base.h>
 
@@ -79,44 +80,56 @@ SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_loca
 
   if (path_length == 0) {
     /* return by !access_ok in strnlen_user */
+    printk("GONGLE: EINVAL\n");
     retval = -EINVAL;
     goto return_value;
   }
 
   kpathname = (char *)kmalloc(path_length * sizeof(char), GFP_KERNEL);
   if (kpathname == NULL) {
+    printk("GONGLE: ENOMEM\n");
     retval = -ENOMEM;
     goto return_value;
   }
 
   retval = strncpy_from_user(kpathname, pathname, path_length);
   if (retval < 0) {
+    printk("GONGLE: EFAULT\n");
     goto free_pathname;
   }
 
   inode = get_inode(kpathname, &retval);
   if (retval < 0) {
+    printk("GONGLE: EGETINODE\n");
     goto free_pathname;
   }
 
   retval = generic_permission(inode, MAY_READ);
   if (retval < 0) {
     /* must be EACCESS */
+    printk("GONGLE: EACCESS\n");
     goto free_pathname;
   }
 
   if (inode->i_op->get_gps_location) {
-    inode->i_op->get_gps_location(inode, &kloc);
+    retval = inode->i_op->get_gps_location(inode, &kloc);
+    if (retval < 0) {
+      /* cannot access */
+      printk("GONGLE: cannot access file\n");
+      goto free_pathname;
+    }
   } else {
     /*
      * FIXME (taebum)
      * Can we say there is no GPS coordinate if get_gps_location is NULL?
      */
+    printk("GONGLE: ENODEV\n");
     retval = -ENODEV;
     goto free_pathname;
   }
 
   if (copy_to_user(loc, &kloc, sizeof(struct gps_location))) {
+    printk("GONGLE: EFAULT2\n");
     retval = -EFAULT;
     goto free_pathname;
   }
@@ -125,6 +138,11 @@ free_pathname:
   kfree(kpathname);
 return_value:
   return retval;
+}
+
+static inline void print_kfloat_info(const kfloat *f) {
+  /* for debugging */
+  printk("GONGLE: value = %lld, pos = %d\n", VAL(f), POS(f));
 }
 
 static inline kfloat _access_range(int acc1, int acc2) {
@@ -137,6 +155,7 @@ static inline kfloat _access_range(int acc1, int acc2) {
 
   return result;
 }
+
 
 int can_access(struct gps_location *g1, struct gps_location *g2) {
   kfloat g1_lat;
