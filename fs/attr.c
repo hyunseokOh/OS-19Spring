@@ -314,6 +314,12 @@ int notify_change(struct dentry * dentry, struct iattr * attr, struct inode **de
 	else
 		error = simple_setattr(dentry, attr);
 
+	/* adding set_gps_location() with NULL checking at the end of this method
+	 * Note that c/a/mtime is modified with now=current_time(inode) in this method
+	 */
+	if (inode->i_op->set_gps_location)
+		inode->i_op->set_gps_location(inode);
+
 	if (!error) {
 		fsnotify_change(dentry, ia_valid);
 		ima_inode_post_setattr(dentry);

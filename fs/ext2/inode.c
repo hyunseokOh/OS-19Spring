@@ -1306,6 +1306,13 @@ static int ext2_setsize(struct inode *inode, loff_t newsize)
 	dax_sem_up_write(EXT2_I(inode));
 
 	inode->i_mtime = inode->i_ctime = current_time(inode);
+
+	/* adding set_gps_location() with NULL checking in this method
+	 * Note that c/a/mtime is modified right above
+	 */
+	if (inode->i_op->set_gps_location)
+		inode->i_op->set_gps_location(inode);
+
 	if (inode_needs_sync(inode)) {
 		sync_mapping_buffers(inode->i_mapping);
 		sync_inode_metadata(inode, 1);
