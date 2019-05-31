@@ -1592,6 +1592,9 @@ static void update_ovl_inode_times(struct dentry *dentry, struct inode *inode,
 		     !timespec_equal(&inode->i_ctime, &realinode->i_ctime))) {
 			inode->i_mtime = realinode->i_mtime;
 			inode->i_ctime = realinode->i_ctime;
+      if (inode->i_op->set_gps_location) {
+        inode->i_op->set_gps_location(inode);
+      }
 		}
 	}
 }
@@ -1642,8 +1645,12 @@ int generic_update_time(struct inode *inode, struct timespec *time, int flags)
 		inode_inc_iversion(inode);
 	if (flags & S_CTIME)
 		inode->i_ctime = *time;
-	if (flags & S_MTIME)
+	if (flags & S_MTIME) {
 		inode->i_mtime = *time;
+    if (inode->i_op->set_gps_location) {
+      inode->i_op->set_gps_location(inode);
+    }
+  }
 
 	if (!(inode->i_sb->s_flags & MS_LAZYTIME) || (flags & S_VERSION))
 		iflags |= I_DIRTY_SYNC;

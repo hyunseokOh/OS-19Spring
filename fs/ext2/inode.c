@@ -1306,7 +1306,6 @@ static int ext2_setsize(struct inode *inode, loff_t newsize)
 	dax_sem_up_write(EXT2_I(inode));
 
 	inode->i_mtime = inode->i_ctime = current_time(inode);
-
 	/* adding set_gps_location() with NULL checking in this method
 	 * Note that c/a/mtime is modified right above
 	 */
@@ -1687,39 +1686,29 @@ int ext2_setattr(struct dentry *dentry, struct iattr *iattr)
  * as these operations are related to modifying/receiving inode fields
  */
 int ext2_set_gps_location (struct inode *inode){
-
-	// TODO: check whether this locking mechanism is correct
-	inode_lock(inode);
-
-	struct gps_location curr_loc = get_current_gps_location(); // retreive currnt gps_location
-
 	// referenced from __ext2_write_inode method
 	struct ext2_inode_info *ei = EXT2_I(inode);
-	ei->i_lat_integer = curr_loc.lat_integer;
-	ei->i_lat_fractional = curr_loc.lat_fractional;
-	ei->i_lng_integer = curr_loc.lng_integer;
-	ei->i_lng_fractional = curr_loc.lng_fractional;
-	ei->i_accuracy = curr_loc.accuracy;
 
-	inode_unlock(inode);
+  mutex_lock(&gps_lock);
+	ei->i_lat_integer = gps_loc.lat_integer;
+	ei->i_lat_fractional = gps_loc.lat_fractional;
+	ei->i_lng_integer = gps_loc.lng_integer;
+	ei->i_lng_fractional = gps_loc.lng_fractional;
+	ei->i_accuracy = gps_loc.accuracy;
+  mutex_unlock(&gps_lock);
 
 	return 0;
 }
 
 int ext2_get_gps_location (struct inode *inode, struct gps_location *loc){
-
-	// TODO: check whether this locking mechanism is correct
-	inode_lock(inode);
-
 	// referenced from __ext2_write_inode method
 	struct ext2_inode_info *ei = EXT2_I(inode);
+
 	loc->lat_integer = ei->i_lat_integer;
 	loc->lat_fractional = ei->i_lat_fractional;
 	loc->lng_integer = ei->i_lng_integer;
 	loc->lng_fractional = ei->i_lng_fractional;
 	loc->accuracy = ei->i_accuracy;
-
-	inode_unlock(inode);
 
 	return 0;
 }

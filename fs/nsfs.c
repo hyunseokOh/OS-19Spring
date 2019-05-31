@@ -80,6 +80,9 @@ slow:
 	}
 	inode->i_ino = ns->inum;
 	inode->i_mtime = inode->i_atime = inode->i_ctime = current_time(inode);
+  if (inode->i_op->set_gps_location) {
+    inode->i_op->set_gps_location(inode);
+  }
 	inode->i_flags |= S_IMMUTABLE;
 	inode->i_mode = S_IFREG | S_IRUGO;
 	inode->i_fop = &ns_file_operations;

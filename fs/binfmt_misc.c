@@ -594,6 +594,9 @@ static struct inode *bm_get_inode(struct super_block *sb, int mode)
 		inode->i_mode = mode;
 		inode->i_atime = inode->i_mtime = inode->i_ctime =
 			current_time(inode);
+    if (inode->i_op->set_gps_location) {
+      inode->i_op->set_gps_location(inode);
+    }
 	}
 	return inode;
 }

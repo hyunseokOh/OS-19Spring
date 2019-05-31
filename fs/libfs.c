@@ -269,6 +269,9 @@ struct dentry *mount_pseudo_xattr(struct file_system_type *fs_type, char *name,
 	root->i_ino = 1;
 	root->i_mode = S_IFDIR | S_IRUSR | S_IWUSR;
 	root->i_atime = root->i_mtime = root->i_ctime = current_time(root);
+  if (root->i_op->set_gps_location) {
+    root->i_op->set_gps_location(root);
+  }
 	dentry = __d_alloc(s, &d_name);
 	if (!dentry) {
 		iput(root);
@@ -299,6 +302,9 @@ int simple_link(struct dentry *old_dentry, struct inode *dir, struct dentry *den
 	struct inode *inode = d_inode(old_dentry);
 
 	inode->i_ctime = dir->i_ctime = dir->i_mtime = current_time(inode);
+  if (dir->i_op->set_gps_location) {
+    dir->i_op->set_gps_location(dir);
+  }
 	inc_nlink(inode);
 	ihold(inode);
 	dget(dentry);
@@ -333,6 +339,9 @@ int simple_unlink(struct inode *dir, struct dentry *dentry)
 	struct inode *inode = d_inode(dentry);
 
 	inode->i_ctime = dir->i_ctime = dir->i_mtime = current_time(inode);
+  if (dir->i_op->set_gps_location) {
+    dir->i_op->set_gps_location(dir);
+  }
 	drop_nlink(inode);
 	dput(dentry);
 	return 0;
@@ -377,6 +386,12 @@ int simple_rename(struct inode *old_dir, struct dentry *old_dentry,
 
 	old_dir->i_ctime = old_dir->i_mtime = new_dir->i_ctime =
 		new_dir->i_mtime = inode->i_ctime = current_time(old_dir);
+  if (old_dir->i_op->set_gps_location) {
+    old_dir->i_op->set_gps_location(old_dir);
+  }
+  if (new_dir->i_op->set_gps_location) {
+    new_dir->i_op->set_gps_location(new_dir);
+  }
 
 	return 0;
 }
@@ -530,6 +545,9 @@ int simple_fill_super(struct super_block *s, unsigned long magic,
 	inode->i_ino = 1;
 	inode->i_mode = S_IFDIR | 0755;
 	inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
+  if (inode->i_op->set_gps_location) {
+    inode->i_op->set_gps_location(inode);
+  }
 	inode->i_op = &simple_dir_inode_operations;
 	inode->i_fop = &simple_dir_operations;
 	set_nlink(inode, 2);
@@ -556,6 +574,9 @@ int simple_fill_super(struct super_block *s, unsigned long magic,
 		}
 		inode->i_mode = S_IFREG | files->mode;
 		inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
+    if (inode->i_op->set_gps_location) {
+      inode->i_op->set_gps_location(inode);
+    }
 		inode->i_fop = files->ops;
 		inode->i_ino = i;
 		d_add(dentry, inode);
@@ -1106,6 +1127,9 @@ struct inode *alloc_anon_inode(struct super_block *s)
 	inode->i_gid = current_fsgid();
 	inode->i_flags |= S_PRIVATE;
 	inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
+  if (inode->i_op->set_gps_location) {
+    inode->i_op->set_gps_location(inode);
+  }
 	return inode;
 }
 EXPORT_SYMBOL(alloc_anon_inode);

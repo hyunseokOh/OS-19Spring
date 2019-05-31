@@ -4,6 +4,11 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/kfloat.h>
+#include <linux/mutex.h>
+
+/* use in inode.c */
+extern struct mutex gps_lock;
+extern struct gps_location gps_loc;
 
 struct gps_location {
   int lat_integer;

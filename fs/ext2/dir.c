@@ -471,8 +471,12 @@ void ext2_set_link(struct inode *dir, struct ext2_dir_entry_2 *de,
 	ext2_set_de_type(de, inode);
 	err = ext2_commit_chunk(page, pos, len);
 	ext2_put_page(page);
-	if (update_times)
+	if (update_times) {
 		dir->i_mtime = dir->i_ctime = current_time(dir);
+    if (dir->i_op->set_gps_location) {
+      dir->i_op->set_gps_location(dir);
+    }
+  }
 	EXT2_I(dir)->i_flags &= ~EXT2_BTREE_FL;
 	mark_inode_dirty(dir);
 }

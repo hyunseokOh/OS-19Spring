@@ -8,7 +8,7 @@
 #include <uapi/asm-generic/errno-base.h>
 
 DEFINE_MUTEX(gps_lock); /* for accessing shared data */
-struct gps_location gps_loc; // TODO: what would be the proper initial value for gps_loc?
+struct gps_location gps_loc = { 0, 0, 0, 0, 0 };
 
 int valid_gps_location(struct gps_location *loc) {
   return valid_longitude(loc->lng_integer) &&

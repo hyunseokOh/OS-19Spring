@@ -558,6 +558,9 @@ got:
 	inode->i_ino = ino;
 	inode->i_blocks = 0;
 	inode->i_mtime = inode->i_atime = inode->i_ctime = current_time(inode);
+  if (inode->i_op->set_gps_location) {
+    inode->i_op->set_gps_location(inode);
+  }
 
 	/* adding set_gps_location() with NULL checking in this method
 	 * Note that c/a/mtime is modified right above
