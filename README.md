@@ -13,7 +13,7 @@
 
 ### Floating Point Arithmetic
 
-Detailed implementations are in `include/linux/kfloat.h` and `kernel/kfloat.c`
+Detailed implementations are in [include/linux/kfloat.h](include/linux/kfloat.h) and [kernel/kfloat.c](kernel/kfloat.c)
 
 #### Floating Point Representation
 
@@ -59,5 +59,7 @@ When multiply two values, we also check whether overflow (underflow) of multipli
 - At each computation (add/sub/multiply), we call `truncate(kfloat *f)` which removes redundant `0`s (when the computation result is `{ 305540, 4 } = 30.5540`, we can remove the last `0` and decrement `pos`
 
 ### GPS Location Based Access Permission
+
+See [distance.pdf](distance.pdf)
 
 ## Test Result
