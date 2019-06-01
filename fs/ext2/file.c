@@ -197,6 +197,7 @@ const struct file_operations ext2_file_operations = {
 };
 
 const struct inode_operations ext2_file_inode_operations = {
+  .permission = ext2_permission,
 #ifdef CONFIG_EXT2_FS_XATTR
 	.listxattr	= ext2_listxattr,
 #endif

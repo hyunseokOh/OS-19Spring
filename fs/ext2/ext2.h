@@ -799,6 +799,7 @@ extern int ext2_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 // GPS-related ext2_file_inode_operations
 extern int ext2_set_gps_location (struct inode *);
 extern int ext2_get_gps_location (struct inode *, struct gps_location *);
+extern int ext2_permission(struct inode *, int);
 
 /* ioctl.c */
 extern long ext2_ioctl(struct file *, unsigned int, unsigned long);

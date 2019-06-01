@@ -1744,10 +1744,6 @@ void touch_atime(const struct path *path)
 	now = current_time(inode);
 	update_time(inode, &now, S_ATIME);
 
-	/* adding set_gps_location() with NULL checking at the end of this method
-	 * Note that c/a/mtime is modified in update_time() (-> generic_update_time()) method
-	 */
-
 	__mnt_drop_write(mnt);
 skip_update:
 	sb_end_write(inode->i_sb);
@@ -1887,14 +1883,6 @@ int file_update_time(struct file *file)
 		return 0;
 
 	ret = update_time(inode, &now, sync_it);
-
-	/* adding set_gps_location() with NULL checking at the end of this method
-	 * Note that c/a/mtime is modified in update_time() (-> generic_update_time()) method
-	 */
-  /*
-	if (inode->i_op->set_gps_location)
-		inode->i_op->set_gps_location(inode);
-    */
 
 	__mnt_drop_write_file(file);
 

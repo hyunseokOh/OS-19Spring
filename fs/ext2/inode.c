@@ -1682,6 +1682,29 @@ int ext2_setattr(struct dentry *dentry, struct iattr *iattr)
 	return error;
 }
 
+int ext2_permission(struct inode *inode, int mask) {
+  /*
+   * extra permission check for ext2 file system
+   */
+  struct gps_location inode_loc;
+  int ret;
+  if (mask & MAY_READ) {
+    if (inode->i_op->get_gps_location) {
+      inode->i_op->get_gps_location(inode, &inode_loc);
+      mutex_lock(&gps_lock);
+      ret = can_access(&inode_loc, &gps_loc);
+      if (ret == 0) {
+        ret = -EACCES;
+        mutex_unlock(&gps_lock);
+        return ret;
+      }
+      mutex_unlock(&gps_lock);
+    }
+  }
+  ret = generic_permission(inode, mask);
+  return ret;
+}
+
 /* implementing ext2_set_gps_location() and ext2_get_gps_location() in inode.c
  * as these operations are related to modifying/receiving inode fields
  */
