@@ -482,9 +482,6 @@ out:
 		wake_up_interruptible_sync_poll(&pipe->wait, POLLIN | POLLRDNORM);
 		kill_fasync(&pipe->fasync_readers, SIGIO, POLL_IN);
 	}
-  if (file_inode(filp)->i_op->set_gps_location) {
-    file_inode(filp)->i_op->set_gps_location(file_inode(filp));
-  }
 	if (ret > 0 && sb_start_write_trylock(file_inode(filp)->i_sb)) {
 		int err = file_update_time(filp);
 		if (err)
