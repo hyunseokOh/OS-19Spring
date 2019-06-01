@@ -109,11 +109,7 @@ SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_loca
   }
 
   if (inode->i_op->get_gps_location) {
-    retval = inode->i_op->get_gps_location(inode, &kloc);
-    if (retval < 0) {
-      /* cannot access (EACCES) */
-      goto free_pathname;
-    }
+    inode->i_op->get_gps_location(inode, &kloc);
   } else {
     /*
      * FIXME (taebum)

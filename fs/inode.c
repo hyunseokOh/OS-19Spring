@@ -1747,8 +1747,6 @@ void touch_atime(const struct path *path)
 	/* adding set_gps_location() with NULL checking at the end of this method
 	 * Note that c/a/mtime is modified in update_time() (-> generic_update_time()) method
 	 */
-	if (inode->i_op->set_gps_location)
-		inode->i_op->set_gps_location(inode);
 
 	__mnt_drop_write(mnt);
 skip_update:
@@ -1893,8 +1891,10 @@ int file_update_time(struct file *file)
 	/* adding set_gps_location() with NULL checking at the end of this method
 	 * Note that c/a/mtime is modified in update_time() (-> generic_update_time()) method
 	 */
+  /*
 	if (inode->i_op->set_gps_location)
 		inode->i_op->set_gps_location(inode);
+    */
 
 	__mnt_drop_write_file(file);
 

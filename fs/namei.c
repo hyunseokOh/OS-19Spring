@@ -337,16 +337,19 @@ int generic_permission(struct inode *inode, int mask)
 
   /* gps check first */
   if (mask & MAY_READ) {
-    if (inode->i_op->get_gps_location) {
-      ret = inode->i_op->get_gps_location(inode, &inode_loc);
-      mutex_lock(&gps_lock);
-      ret = can_access(&inode_loc, &gps_loc);
-      if (ret == 0) {
-        ret = -EACCES;
+    if (!S_ISDIR(inode->i_mode)) {
+      /* do not check dir (too burdensome) */
+      if (inode->i_op->get_gps_location) {
+        ret = inode->i_op->get_gps_location(inode, &inode_loc);
+        mutex_lock(&gps_lock);
+        ret = can_access(&inode_loc, &gps_loc);
+        if (ret == 0) {
+          ret = -EACCES;
+          mutex_unlock(&gps_lock);
+          return ret;
+        }
         mutex_unlock(&gps_lock);
-        return ret;
       }
-      mutex_unlock(&gps_lock);
     }
   }
 

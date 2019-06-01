@@ -547,6 +547,9 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 			add_wchar(current, ret);
 		}
 		inc_syscw(current);
+    if (file_inode(file)->i_op->set_gps_location) {
+      file_inode(file)->i_op->set_gps_location(file_inode(file));
+    }
 		file_end_write(file);
 	}
 
