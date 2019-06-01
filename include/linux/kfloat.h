@@ -6,6 +6,7 @@
 #define RADIAN(f) (kfloat_mul(f, &degree2rad))
 #define KINT(f) (VAL(f) / safe_pad(POS(f)))
 #define KFRAC(f) (VAL(f) % safe_pad(POS(f)))
+#define DEFAULT_POS 6
 
 typedef struct {
   long long value;

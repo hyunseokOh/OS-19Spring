@@ -301,19 +301,12 @@ kfloat kfloat_cos(const kfloat *f) {
 
 kfloat to_kfloat(int integer, int fraction) {
   /* type casting */
-  int pos = 0;
-  int frac = fraction;
   long long value;
   kfloat result;
 
-  while (frac > 0) {
-    frac /= 10;
-    pos++;
-  }
-
-  value = integer * safe_pad(pos) + fraction;
-
+  value = integer * safe_pad(DEFAULT_POS) + fraction;
   result.value = value;
-  result.pos = pos;
+  result.pos = DEFAULT_POS;
+
   return result;
 }

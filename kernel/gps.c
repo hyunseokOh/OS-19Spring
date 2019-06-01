@@ -80,42 +80,38 @@ SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_loca
 
   if (path_length == 0) {
     /* return by !access_ok in strnlen_user */
-    printk("GONGLE: EINVAL\n");
     retval = -EINVAL;
     goto return_value;
   }
 
   kpathname = (char *)kmalloc(path_length * sizeof(char), GFP_KERNEL);
   if (kpathname == NULL) {
-    printk("GONGLE: ENOMEM\n");
     retval = -ENOMEM;
     goto return_value;
   }
 
   retval = strncpy_from_user(kpathname, pathname, path_length);
   if (retval < 0) {
-    printk("GONGLE: EFAULT\n");
+    /* EFAULT */
     goto free_pathname;
   }
 
   inode = get_inode(kpathname, &retval);
   if (retval < 0) {
-    printk("GONGLE: EGETINODE\n");
+    retval = -ENOENT;
     goto free_pathname;
   }
 
   retval = generic_permission(inode, MAY_READ);
   if (retval < 0) {
     /* must be EACCESS */
-    printk("GONGLE: EACCESS\n");
     goto free_pathname;
   }
 
   if (inode->i_op->get_gps_location) {
     retval = inode->i_op->get_gps_location(inode, &kloc);
     if (retval < 0) {
-      /* cannot access */
-      printk("GONGLE: cannot access file\n");
+      /* cannot access (EACCES) */
       goto free_pathname;
     }
   } else {
@@ -123,13 +119,11 @@ SYSCALL_DEFINE2(get_gps_location, const char __user *, pathname, struct gps_loca
      * FIXME (taebum)
      * Can we say there is no GPS coordinate if get_gps_location is NULL?
      */
-    printk("GONGLE: ENODEV\n");
     retval = -ENODEV;
     goto free_pathname;
   }
 
   if (copy_to_user(loc, &kloc, sizeof(struct gps_location))) {
-    printk("GONGLE: EFAULT2\n");
     retval = -EFAULT;
     goto free_pathname;
   }
