@@ -5,10 +5,6 @@
 
 #define SYS_GET_GPS_LOCATION 399
 
-static inline double to_double(int integer, int fractional) {
-  return (double) integer + (double) fractional * 1e-6;
-}
-
 char *google_prefix = "https://maps.google.com/?q=";
 
 struct gps_location {
@@ -21,8 +17,6 @@ struct gps_location {
 
 int main(int argc, char *argv[]) {
   int syscallResult;
-  double lat;
-  double lng;
   struct gps_location gps = { 0, 0, 0, 0, 0 };
 
   if (argc != 2) {
@@ -51,11 +45,8 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
-  lat = to_double(gps.lat_integer, gps.lat_fractional);
-  lng = to_double(gps.lng_integer, gps.lng_fractional);
-
   printf("File path = %s\n", argv[1]);
-  printf("Latitude = %.6lf, Longitude = %.6lf\n", lat, lng);
+  printf("Latitude = %d.%06d, Longitude = %d.%06d\n", gps.lat_integer, gps.lat_fractional, gps.lng_integer, gps.lng_fractional);
   printf("Accuracy = %d [m]\n", gps.accuracy); 
-  printf("Google Link = %s%.6lf,%.6lf\n", google_prefix, lat, lng);
+  printf("Google Link = %s%d.%06d,%d.%06d\n", google_prefix, gps.lat_integer, gps.lat_fractional, gps.lng_integer, gps.lng_fractional);
 }
