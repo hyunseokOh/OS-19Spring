@@ -129,7 +129,7 @@ static inline kfloat _kfloat_add(const kfloat *f1, const kfloat *f2) {
   f1_val = VAL(f1);
 
   while (overflow_mul(VAL(f2), safe_pad(pad)) && pad > 0) {
-    f1_val /= 10;
+    f1_val = rounding(f1_val);
     pad--;
     pos--;
   }
@@ -137,8 +137,8 @@ static inline kfloat _kfloat_add(const kfloat *f1, const kfloat *f2) {
   f2_val = VAL(f2) * safe_pad(pad);
 
   while (overflow_add(f1_val, f2_val) && pos > 0) {
-    f1_val /= 10;
-    f2_val /= 10;
+    f1_val = rounding(f1_val);
+    f2_val = rounding(f2_val);
     pos--;
   }
 
@@ -190,10 +190,10 @@ kfloat kfloat_mul(const kfloat *f1, const kfloat *f2) {
 
   while (overflow_mul(f1_val, f2_val) && (f1_pos > 0 || f2_pos > 0)) {
     if (f1_pos > f2_pos) {
-      f1_val /= 10;
+      f1_val = rounding(f1_val);
       f1_pos--;
     } else {
-      f2_val /= 10;
+      f2_val = rounding(f2_val);
       f2_pos--;
     }
   }

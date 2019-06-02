@@ -26,6 +26,15 @@ extern kfloat degree2rad;
 extern kfloat rad2degree;
 extern kfloat constant_1;
 
+static inline long long rounding(long long l) {
+  int least_decimal = l % 10;
+  if (least_decimal >= 5) {
+    return l / 10 + 1;
+  } else { 
+    return l / 10;
+  }
+}
+
 static inline int overflow_add(long long l1, long long l2) {
   /*
    * Check whether addition incurs overflow (underflow)
@@ -81,7 +90,7 @@ static inline void truncate(kfloat *f) {
    *  - if pos > 18, remove the last one
    */
   while ((VAL(f) % 10 == 0 && POS(f) > 0) || POS(f) > 18) {
-    f->value = f->value / 10;
+    f->value = rounding(f->value);
     f->pos = f->pos - 1;
   }
 }
