@@ -7,6 +7,11 @@
 ---
 # Project 4 - Geo-Tagged File System
 
+## Table of Contents
+- [Implementation Details](#implementation-details)
+- [Test](#test)
+- [Lessons Learned](#lessons-learned)
+
 ## Implementation Details
 
 ### Modified/Implemented Files
@@ -130,10 +135,11 @@ Difference        = 9.130208811214402e-10
 The cosine value of angle between `bld301` and `mit` (MIT library) is
 ```
 Our approximation = -0.151112455832647458 (about 98.69 degree)
-C Library         = -0.148647712418040534 (about 98.55 degree)
-Difference        =  0.0024647434146069236
+C Library         = -0.148085108868682758 (about 98.52 degree)
+Difference        =  0.0030273469639647
 ```
-Although magnitude of the angle between `bld301` and `mit` is about 98.55 degree, our approximation calculated it to 98.69 degree.
+Although magnitude of the angle between `bld301` and `mit` is about 98.52 degree, our approximation calculates it to 98.69 degree.  
+We can confirm that its quite accurate for far distance.
 
 
 ### Rename Behaviour
