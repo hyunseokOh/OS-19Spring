@@ -620,7 +620,7 @@ int ext2_delete_entry (struct ext2_dir_entry_2 * dir, struct page * page )
 	err = ext2_commit_chunk(page, pos, to - from);
 	inode->i_ctime = inode->i_mtime = current_time(inode);
   if (inode->i_op->set_gps_location) {
-    inode->i_op->set_gps_location(dir);
+    inode->i_op->set_gps_location(inode);
   }
 	EXT2_I(inode)->i_flags &= ~EXT2_BTREE_FL;
 	mark_inode_dirty(inode);
