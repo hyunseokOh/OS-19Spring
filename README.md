@@ -231,3 +231,9 @@ Google Link = https://maps.google.com/?q=42.359034,-71.089137
 ```
 
 ## Lessons Learned
+
+- Implementing floating point using integer is fun :)
+- Learned design pattern through proj3, proj4 (function pointer template)
+- Project + Project + Project + Project = June
+- Number of times we flashed the sd card = ???
+- We now have a magic compass to navigate through a flood of kernel codes!
