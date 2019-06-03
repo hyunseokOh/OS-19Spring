@@ -9,7 +9,13 @@
 
 ## Table of Contents
 - [Implementation Details](#implementation-details)
+    - [Floating Point Arithmetic](#floating-point-arithmetic)
+    - [GPS Location Based Access Permission](#gps-location-based-access-permission)
 - [Test](#test)
+    - [Prepare Test](#prepare-test)
+    - [Floating Point Accuracy](#floating-point-accuracy)
+    - [Rename Behaviour](#rename-behaviour)
+    - [file_loc Test](#file_loc-test)
 - [Lessons Learned](#lessons-learned)
 
 ## Implementation Details
@@ -128,18 +134,24 @@ then two binary files, `file_loc` and `gpsupdate` are created in `test`
 To check our floating point representation works correct, we duplicated them in user-side and compared with math library of C (`<math.h>`).  
 The cosine value of angle between (`f` value which we mentioned in [distance.pdf](distance.pdf)) `bld301` and `lacucina` is
 ```
-Our approximation = 1.000000000319648086
+Our approximation = 0.999999998565644588
 C Library         = 0.999999999406627205
-Difference        = 9.130208811214402e-10
+Relative Error    = 8.409826173777211e-10
+```
+The cosine value of Seoul City Hall and Tokyo Metropolitan Government Building is
+```
+Our approximation = 0.983679292725880061
+C Library         = 0.983679293768168872
+Relative Error    = 1.0595819363265917e-09
 ```
 The cosine value of angle between `bld301` and `mit` (MIT library) is
 ```
 Our approximation = -0.151112455832647458 (about 98.69 degree)
 C Library         = -0.148085108868682758 (about 98.52 degree)
-Difference        =  0.0030273469639647
+Relative Error    =  0.020443304372960786 (about 2%)
 ```
 Although magnitude of the angle between `bld301` and `mit` is about 98.52 degree, our approximation calculates it to 98.69 degree.  
-We can confirm that its quite accurate for far distance.
+We can confirm that its quite accurate even for far distance.
 
 
 ### Rename Behaviour
