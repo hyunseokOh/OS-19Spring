@@ -38,19 +38,22 @@
     - `can_access` function implementation which check two `struct gps_location` are closer than accuracy boundary
 7. `include/linux/fs.h`
     - add `set_gps_location` and `get_gps_location` to `struct inode_operations`
-8. `fs/ext2/inode.c`
+8. `fs/ext2/ext2.h`
+    - add GPS-related fields to `struct ext2_inode` and `struct ext2_inode_info`
+9. `fs/ext2/inode.c`
     - add `ext2_set_gps_location` and `ext2_get_gps_location`
     - add `ext2_permission` which calls `can_access` when try to read file
-9. `fs/ext2/ialloc.`
+    - add endian conversion for GPS-related fields in `ext2_iget()` and `__ext2_write_inode()`
+10. `fs/ext2/ialloc.c`
     - call `ext2_set_gps_location` in `ext2_new_inode` (ext2 inode create)
-10. `fs/ext2/{namei.c,file.c,symlink.c}`
+11. `fs/ext2/{namei.c,file.c,symlink.c}`
     - register `ext2_set_gps_location` and `ext2_get_gps_location` to `ext2_dir_inode_operations`
     - register `ext2_set_gps_location` and `ext2_get_gps_location` to `ext2_file_inode_operations`
     - register `ext2_permission` to `ext2_file_inode_operations`
     - register `ext2_set_gps_location` and `ext2_get_gps_location` to `ext2_symlink_inode_operations`
     - we do not add `ext2_permission` to `ext2_dir_inode_operations` and `ext2_symlink_inode_operations`
         - gps location is tagged to `dir` and `symlink` but we can always read those files regardless of current location
-11. some other files in `fs` and `fs/ext2`
+12. some other files in `fs` and `fs/ext2`
     - when `inode`'s `mtime` is updated to `current_time`, call `set_gps_location` if `inode` is geo-tagged
     - we filtered target files via `$ grep -iRl "mtime =" fs/`
     - command like `$ cat ${filename}` cannot update gps location since it changes just `atime`
