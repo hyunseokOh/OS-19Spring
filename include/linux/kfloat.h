@@ -27,12 +27,7 @@ extern kfloat rad2degree;
 extern kfloat constant_1;
 
 static inline long long rounding(long long l) {
-  int least_decimal = l % 10;
-  if (least_decimal >= 5) {
-    return l / 10 + 1;
-  } else { 
-    return l / 10;
-  }
+  return l / 10;
 }
 
 static inline int overflow_add(long long l1, long long l2) {
