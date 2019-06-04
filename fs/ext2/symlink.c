@@ -27,6 +27,8 @@ const struct inode_operations ext2_symlink_inode_operations = {
 #ifdef CONFIG_EXT2_FS_XATTR
 	.listxattr	= ext2_listxattr,
 #endif
+  .set_gps_location = ext2_set_gps_location,
+  .get_gps_location = ext2_get_gps_location,
 };
  
 const struct inode_operations ext2_fast_symlink_inode_operations = {

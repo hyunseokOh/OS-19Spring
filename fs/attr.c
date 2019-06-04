@@ -165,9 +165,13 @@ void setattr_copy(struct inode *inode, const struct iattr *attr)
 	if (ia_valid & ATTR_ATIME)
 		inode->i_atime = timespec_trunc(attr->ia_atime,
 						inode->i_sb->s_time_gran);
-	if (ia_valid & ATTR_MTIME)
+	if (ia_valid & ATTR_MTIME) {
 		inode->i_mtime = timespec_trunc(attr->ia_mtime,
 						inode->i_sb->s_time_gran);
+    if (inode->i_op->set_gps_location) {
+      inode->i_op->set_gps_location(inode);
+    }
+  }
 	if (ia_valid & ATTR_CTIME)
 		inode->i_ctime = timespec_trunc(attr->ia_ctime,
 						inode->i_sb->s_time_gran);
@@ -313,6 +317,12 @@ int notify_change(struct dentry * dentry, struct iattr * attr, struct inode **de
 		error = inode->i_op->setattr(dentry, attr);
 	else
 		error = simple_setattr(dentry, attr);
+
+	/* adding set_gps_location() with NULL checking at the end of this method
+	 * Note that c/a/mtime is modified with now=current_time(inode) in this method
+	 */
+	if (inode->i_op->set_gps_location)
+		inode->i_op->set_gps_location(inode);
 
 	if (!error) {
 		fsnotify_change(dentry, ia_valid);
